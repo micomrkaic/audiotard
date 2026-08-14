@@ -95,13 +95,23 @@ for (const [id, vid, fix] of [["drive","drivev",1],["bias","biasv",2],
       (+$(id).value).toFixed(fix);
 
 async function loadWasm() {
-  const stub = new Proxy({}, { get: () => () => 0 });
-  const r = await WebAssembly.instantiateStreaming(
-      fetch("audiotard.wasm"), { wasi_snapshot_preview1: stub });
+  const imports = { wasi_snapshot_preview1:
+                    new Proxy({}, { get: () => () => 0 }) };
+  let r;
+  try {
+    r = await WebAssembly.instantiateStreaming(fetch("audiotard.wasm"),
+                                               imports);
+  } catch (e) {   /* server sent a non-wasm MIME type: fetch manually */
+    const buf = await (await fetch("audiotard.wasm")).arrayBuffer();
+    r = await WebAssembly.instantiate(buf, imports);
+  }
   wasm = r.instance.exports;
   if (wasm._initialize) wasm._initialize();
+  $("status").textContent += "  [dsp core loaded]";
 }
-loadWasm();
+loadWasm().catch(e => {
+  $("status").textContent = "FAILED to load audiotard.wasm: " + e;
+});
 
 $("file").onchange = async e => {
   const f = e.target.files[0];

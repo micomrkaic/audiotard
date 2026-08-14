@@ -50,7 +50,7 @@ test_engine
 *.o
 *.wav
 *.flac
-*.png
+/*.png
 abx_session*
 nohup.out
 EOF
