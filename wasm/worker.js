@@ -42,6 +42,8 @@ function renderSpan(from, to) {           /* -> Float64 interleaved     */
         params.vinyl, params.tape, params.wow, params.flutter,
         params.hiss, params.crkRate, params.crkDb, params.hfLoss,
         params.bumpDb, params.bwHz, 0, from);
+    if (!out) postMessage({ type: "error",
+        msg: "DSP render FAILED (out of memory?) -- playing clean" });
   }
   const res = new Float64Array(n * ch);
   if (out) res.set(heap().subarray(out / 8, out / 8 + n * ch));

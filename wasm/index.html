@@ -51,7 +51,7 @@ selection; click to seek)</span>
 
 <fieldset><legend>transport (streaming: knob changes land in ~0.3 s)</legend>
   <button id="play" disabled>play</button>
-  <button id="bypass" disabled>processed</button>
+  <button id="bypass" disabled>hearing: PROCESSED</button>
   <button id="stop" disabled>stop</button>
 </fieldset>
 
@@ -168,6 +168,7 @@ worker.onmessage = e => {
   const m = e.data;
   if (m.type === "ready") { wasmReady = true;
     $("status").textContent += "  [dsp core loaded]"; return; }
+  if (m.type === "error") { $("status").textContent = m.msg; return; }
   if (m.type !== "block" || !playing) return;
   pending = false;
   const f32 = new Float32Array(m.buf);
@@ -201,7 +202,7 @@ function startStream(pos) {
   const [a, b] = region();
   if (pos < a || pos >= b) pos = a;
   bypassed = false;
-  $("bypass").textContent = "processed";
+  $("bypass").textContent = "hearing: PROCESSED (click for clean)";
   $("bypass").classList.add("on");
   worker.postMessage({ type:"params", p: collect(false) });
   worker.postMessage({ type:"start", pos, r0:a, r1:b });
@@ -220,7 +221,9 @@ $("play").onclick = () => { actx.resume(); startStream(+$("pos").value); };
 $("stop").onclick = stopStream;
 $("bypass").onclick = () => {
   bypassed = !bypassed;
-  $("bypass").textContent = bypassed ? "CLEAN (bypassed)" : "processed";
+  $("bypass").textContent = bypassed
+      ? "hearing: CLEAN (click for processed)"
+      : "hearing: PROCESSED (click for clean)";
   $("bypass").classList.toggle("on", !bypassed);
   worker.postMessage({ type:"params", p: collect(bypassed) });
 };
@@ -393,26 +396,56 @@ function drawSpec() {
     need -= take;
     bi--; off = bi >= 0 ? blockMap[bi].mono.length : 0;
   }
-  const pw = fftPow(buf);
-  g.strokeStyle = "#fac740"; g.lineWidth = 1.2; g.beginPath();
-  let started = false;
-  for (let x = 0; x < w; x++) {
-    const lmin = Math.log10(fmin), lmax = Math.log10(fmax);
-    const f0 = Math.pow(10, lmin + (lmax - lmin) * x / w);
-    const f1 = Math.pow(10, lmin + (lmax - lmin) * (x + 1) / w);
-    let b0 = Math.max(1, Math.floor(f0 / rate * FN));
-    let b1 = Math.min(FN / 2, Math.floor(f1 / rate * FN) + 1);
-    if (b0 >= b1) continue;
-    let m = 0;
-    for (let b = b0; b < b1; b++) if (pw[b] > m) m = pw[b];
-    let db = 10 * Math.log10(m + 1e-24);
-    if (db < LO) db = LO;
-    const y = (HI - db) / (HI - LO) * ph;
-    if (!started) { g.moveTo(x, y); started = true; }
-    else g.lineTo(x, y);
+  const trace = (pw, color, lw) => {
+    g.strokeStyle = color; g.lineWidth = lw; g.beginPath();
+    let started = false;
+    for (let x = 0; x < w; x++) {
+      const lmin = Math.log10(fmin), lmax = Math.log10(fmax);
+      const f0 = Math.pow(10, lmin + (lmax - lmin) * x / w);
+      const f1 = Math.pow(10, lmin + (lmax - lmin) * (x + 1) / w);
+      let b0 = Math.max(1, Math.floor(f0 / rate * FN));
+      let b1 = Math.min(FN / 2, Math.floor(f1 / rate * FN) + 1);
+      if (b0 >= b1) continue;
+      let m = 0;
+      for (let b = b0; b < b1; b++) if (pw[b] > m) m = pw[b];
+      let db = 10 * Math.log10(m + 1e-24);
+      if (db < LO) db = LO;
+      const y = (HI - db) / (HI - LO) * ph;
+      if (!started) { g.moveTo(x, y); started = true; }
+      else g.lineTo(x, y);
+    }
+    g.stroke(); g.lineWidth = 1;
+  };
+
+  /* clean reference at the same file position, gain-fitted: the
+   * browser edition of the GTK overlay + residual metric              */
+  if (ap.fpos >= FN && clean) {
+    const cbuf = new Float64Array(FN);
+    for (let i = 0; i < FN; i++) {
+      let s = 0;
+      const f = ap.fpos - FN + i;
+      for (let c = 0; c < ch; c++) s += clean[f * ch + c];
+      cbuf[i] = s / ch;
+    }
+    let cc = 0, cp = 0;
+    for (let i = 0; i < FN; i++) { cc += cbuf[i] * cbuf[i];
+                                   cp += cbuf[i] * buf[i]; }
+    if (cc > 1e-12) {
+      const gg = cp / cc;
+      let ee = 0;
+      for (let i = 0; i < FN; i++) {
+        const e = buf[i] - gg * cbuf[i];
+        ee += e * e;
+        cbuf[i] *= gg;
+      }
+      trace(fftPow(cbuf), "rgba(102,153,242,.85)", 1.0);
+      g.fillStyle = "#fac740"; g.font = "10px monospace";
+      g.fillText("residual (added dist+noise): " +
+          (10 * Math.log10(ee / (gg * gg * cc) + 1e-24)).toFixed(1) +
+          " dB", w - 260, 12);
+    }
   }
-  g.stroke();
-  g.lineWidth = 1;
+  trace(fftPow(buf), "#fac740", 1.2);
 }
 
 function shaperEval(sh, drive, bias, h2a, x) {
