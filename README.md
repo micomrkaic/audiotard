@@ -1,5 +1,7 @@
 # audiotard
 
+![audiotard](docs/banner.png)
+
 **audiotard** applies *pleasant* distortions to music — tube warmth, second
 harmonic, cassette tape, vinyl — with every knob calibrated in physical
 units, and then lets you find out, with actual statistics, whether you can
@@ -222,6 +224,25 @@ third_party/
   dr_wav.h, dr_flac.h   vendored decoders (mackron/dr_libs)
 Makefile
 ```
+
+## WebAssembly (run it in a browser)
+
+The DSP core compiles to WebAssembly with plain clang + wasi-libc -- no
+emscripten toolchain needed:
+
+```sh
+sudo apt install clang lld wasi-libc libclang-rt-18-dev-wasm32
+sh wasm/build.sh                      # -> wasm/audiotard.wasm (~240 KB)
+cd wasm && python3 -m http.server     # then open http://localhost:8000
+```
+
+`wasm/index.html` is a self-contained front end: load any audio file,
+set the chain, play clean vs processed, and run a 16-trial ABX with an
+exact binomial p-value -- entirely client-side, nothing uploaded. The
+same `chain_render` that powers the CLI and GTK app does the rendering,
+so browser results are bit-comparable with native ones. (The GTK GUI
+itself does not port; a fuller web UI would reimplement it against
+canvas/Web Audio on top of this module.)
 
 ## Notes and limitations
 

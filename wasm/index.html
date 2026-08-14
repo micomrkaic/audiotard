@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<!-- This file is part of audiotard. Copyright (C) 2026 Mico.
+     GPL-3.0-or-later; see COPYING.
+     Serve this directory over HTTP (e.g. python3 -m http.server) --
+     browsers refuse to fetch .wasm from file:// URLs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>audiotard / wasm</title>
+<style>
+  body { background:#141418; color:#c9c9d1; font-family:monospace;
+         max-width:900px; margin:2em auto; padding:0 1em; }
+  h1 { color:#fac740; margin-bottom:0; }
+  .sub { color:#8a8a94; margin-top:.2em; }
+  fieldset { border:1px solid #2e2e36; margin:1em 0; }
+  legend { color:#8a8a94; }
+  label { display:inline-block; min-width:9em; }
+  input[type=range] { width:220px; vertical-align:middle; }
+  button { background:#232329; color:#c9c9d1; border:1px solid #3a3a44;
+           padding:.45em 1em; margin:.2em; cursor:pointer; }
+  button:disabled { opacity:.35; cursor:default; }
+  button:hover:enabled { border-color:#fac740; }
+  .val { color:#fac740; display:inline-block; min-width:4em; }
+  #status, #abxstat { color:#6699f2; }
+  #result { color:#fac740; }
+</style>
+</head>
+<body>
+<h1>audiotard</h1>
+<p class="sub">calibrated distortion &middot; blind listening tests &mdash;
+the DSP core running as WebAssembly</p>
+
+<fieldset><legend>input</legend>
+  <input type="file" id="file" accept="audio/*">
+  <span id="status">no file loaded (first ~15 s are used)</span>
+</fieldset>
+
+<fieldset><legend>waveshaper</legend>
+  <label>shape</label>
+  <select id="shape">
+    <option value="0">none</option><option value="1">tanh (odd)</option>
+    <option value="2" selected>tube (even+odd)</option>
+    <option value="3">h2 (pure 2nd)</option>
+  </select>
+  <label style="margin-left:1em">oversampling</label>
+  <select id="os"><option>2</option><option selected>4</option>
+    <option>8</option></select><br>
+  <label>drive</label><input type="range" id="drive" min="0.5" max="10"
+    step="0.1" value="2"><span class="val" id="drivev">2.0</span><br>
+  <label>bias</label><input type="range" id="bias" min="0" max="1"
+    step="0.01" value="0.2"><span class="val" id="biasv">0.20</span><br>
+  <label>H2 (dB re f0)</label><input type="range" id="h2db" min="-60"
+    max="-10" step="1" value="-30"><span class="val" id="h2dbv">-30</span>
+</fieldset>
+
+<fieldset><legend>media</legend>
+  <label><input type="checkbox" id="vinyl"> vinyl</label>
+  <label><input type="checkbox" id="tape"> tape</label><br>
+  <label>wow (cents)</label><input type="range" id="wow" min="0" max="30"
+    step="0.5" value="8"><span class="val" id="wowv">8.0</span><br>
+  <label>hiss (dBFS)</label><input type="range" id="hiss" min="-100"
+    max="-40" step="1" value="-60"><span class="val" id="hissv">-60</span><br>
+  <label>crackle (dBFS)</label><input type="range" id="crkdb" min="-60"
+    max="-10" step="1" value="-33"><span class="val" id="crkdbv">-33</span>
+</fieldset>
+
+<fieldset><legend>transport</legend>
+  <button id="playc" disabled>play clean</button>
+  <button id="playp" disabled>render + play processed</button>
+  <button id="stop" disabled>stop</button>
+</fieldset>
+
+<fieldset><legend>ABX (16 trials, fixed level)</legend>
+  <button id="abxstart" disabled>start</button>
+  <button id="pa" disabled>play A (clean)</button>
+  <button id="pb" disabled>play B (processed)</button>
+  <button id="px" disabled>play X</button>
+  <button id="xa" disabled>X = A</button>
+  <button id="xb" disabled>X = B</button>
+  <div id="abxstat"></div><div id="result"></div>
+</fieldset>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let wasm, actx, srcNode = null;
+let clean = null, ch = 0, rate = 0, nframes = 0;  // interleaved Float64
+let procBuf = null;                                // AudioBuffer
+let cleanBuf = null;
+
+for (const [id, vid, fix] of [["drive","drivev",1],["bias","biasv",2],
+    ["h2db","h2dbv",0],["wow","wowv",1],["hiss","hissv",0],
+    ["crkdb","crkdbv",0]])
+  $(id).oninput = () => $(vid).textContent =
+      (+$(id).value).toFixed(fix);
+
+async function loadWasm() {
+  const stub = new Proxy({}, { get: () => () => 0 });
+  const r = await WebAssembly.instantiateStreaming(
+      fetch("audiotard.wasm"), { wasi_snapshot_preview1: stub });
+  wasm = r.instance.exports;
+  if (wasm._initialize) wasm._initialize();
+}
+loadWasm();
+
+$("file").onchange = async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  actx = actx || new AudioContext();
+  const ab = await f.arrayBuffer();
+  const dec = await actx.decodeAudioData(ab);
+  ch = Math.min(dec.numberOfChannels, 2);
+  rate = dec.sampleRate;
+  nframes = Math.min(dec.length, Math.floor(15 * rate));
+  clean = new Float64Array(nframes * ch);
+  for (let c = 0; c < ch; c++) {
+    const d = dec.getChannelData(c);
+    for (let i = 0; i < nframes; i++) clean[i * ch + c] = d[i];
+  }
+  cleanBuf = toAudioBuffer(clean);
+  procBuf = null;
+  $("status").textContent =
+      `${f.name}: ${(nframes / rate).toFixed(1)} s, ${ch} ch, ${rate} Hz`;
+  for (const b of ["playc", "playp", "abxstart"]) $(b).disabled = false;
+};
+
+function toAudioBuffer(interleaved) {
+  const b = actx.createBuffer(ch, nframes, rate);
+  for (let c = 0; c < ch; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < nframes; i++) d[i] = interleaved[i * ch + c];
+  }
+  return b;
+}
+
+function render() {
+  const ptr = wasm.at_alloc(nframes * ch);
+  new Float64Array(wasm.memory.buffer, ptr, nframes * ch).set(clean);
+  const out = wasm.at_render(ptr, nframes, ch, rate,
+      +$("shape").value, +$("drive").value, +$("bias").value,
+      +$("h2db").value, +$("os").value,
+      $("vinyl").checked ? 1 : 0, $("tape").checked ? 1 : 0,
+      +$("wow").value, 2.5, +$("hiss").value,
+      12, +$("crkdb").value, 0.35, 3.0, 15000, 1);
+  wasm.at_free(ptr);
+  if (!out) return null;
+  const o = new Float64Array(wasm.memory.buffer, out, nframes * ch);
+  return toAudioBuffer(o);
+}
+
+function play(buf) {
+  stop();
+  srcNode = actx.createBufferSource();
+  srcNode.buffer = buf;
+  srcNode.connect(actx.destination);
+  srcNode.start();
+  $("stop").disabled = false;
+}
+function stop() {
+  if (srcNode) { try { srcNode.stop(); } catch (e) {} srcNode = null; }
+}
+$("playc").onclick = () => play(cleanBuf);
+$("playp").onclick = () => {
+  $("status").textContent = "rendering...";
+  setTimeout(() => {
+    procBuf = render();
+    $("status").textContent = procBuf ? "playing processed"
+                                      : "render failed";
+    if (procBuf) play(procBuf);
+  }, 30);
+};
+$("stop").onclick = stop;
+
+/* ---- ABX ---- */
+let trials = 16, t = 0, k = 0, xIsB = false, running = false;
+function binomP(k, n) {                 /* P(X >= k), X ~ Bin(n, 1/2) */
+  let p = 0;
+  for (let i = k; i <= n; i++) {
+    let c = 0;                          /* log C(n,i) */
+    for (let j = 0; j < i; j++) c += Math.log(n - j) - Math.log(j + 1);
+    p += Math.exp(c - n * Math.LN2);
+  }
+  return p;
+}
+$("abxstart").onclick = () => {
+  procBuf = render();
+  if (!procBuf) { $("abxstat").textContent = "render failed"; return; }
+  running = true; t = 1; k = 0;
+  xIsB = Math.random() < 0.5;
+  for (const b of ["pa","pb","px","xa","xb"]) $(b).disabled = false;
+  $("result").textContent = "";
+  $("abxstat").textContent = `trial 1/${trials} -- is X clean or processed?`;
+};
+$("pa").onclick = () => play(cleanBuf);
+$("pb").onclick = () => play(procBuf);
+$("px").onclick = () => play(xIsB ? procBuf : cleanBuf);
+function answer(saidB) {
+  if (!running) return;
+  stop();
+  if (saidB === xIsB) k++;
+  if (t >= trials) {
+    const p = binomP(k, trials);
+    $("result").textContent =
+        `${k}/${trials} correct, exact binomial p = ${p.toFixed(4)} -- ` +
+        (p < 0.05 ? "you can reliably hear it" : "consistent with guessing");
+    $("abxstat").textContent = "session finished";
+    running = false;
+    for (const b of ["pa","pb","px","xa","xb"]) $(b).disabled = true;
+    return;
+  }
+  t++;
+  xIsB = Math.random() < 0.5;
+  $("abxstat").textContent = `trial ${t}/${trials} -- is X clean or processed?`;
+}
+$("xa").onclick = () => answer(false);
+$("xb").onclick = () => answer(true);
+</script>
+</body>
+</html>
