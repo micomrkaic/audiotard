@@ -1,0 +1,9 @@
+audiotard
+audiotard-gui
+test_engine
+*.o
+*.wav
+*.flac
+*.png
+abx_session*
+nohup.out
