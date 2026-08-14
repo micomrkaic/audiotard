@@ -207,6 +207,8 @@ function startStream(pos) {
   worker.postMessage({ type:"start", pos, r0:a, r1:b });
   playing = true;
   playT = actx.currentTime + 0.08;
+  pending = true;
+  worker.postMessage({ type:"need" });          /* bootstrap the pump  */
   for (const id of ["stop","bypass"]) $(id).disabled = false;
 }
 function stopStream() {
@@ -241,6 +243,7 @@ $("pos").addEventListener("change", () => {
 /* ------------------------------ canvases ---------------------------- */
 function fit(cv) {
   const w = cv.clientWidth;
+  cv.style.height = cv.getAttribute("height") + "px";
   if (cv.width !== w * devicePixelRatio) {
     cv.width = w * devicePixelRatio;
     cv.height = cv.getAttribute("height") * devicePixelRatio;
@@ -484,16 +487,16 @@ function drawShaper() {
 }
 
 function tick() {
+  if (playing && playT - actx.currentTime < 0.30 && !pending) {
+    pending = true;
+    worker.postMessage({ type: "need" });
+  }
   const ap = playing ? audiblePos() : null;
   if (ap) {
     drawWf(ap.fpos);
     $("pos").value = ap.fpos;
     $("postime").textContent = (ap.fpos / rate).toFixed(1) + " s";
     drawSpec();
-    if (playT - actx.currentTime < 0.30 && !pending) {
-      pending = true;
-      worker.postMessage({ type: "need" });
-    }
   }
   requestAnimationFrame(tick);
 }
