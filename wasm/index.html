@@ -242,15 +242,21 @@ $("pos").addEventListener("change", () => {
 
 /* ------------------------------ canvases ---------------------------- */
 function fit(cv) {
-  const w = cv.clientWidth;
-  cv.style.height = cv.getAttribute("height") + "px";
-  if (cv.width !== w * devicePixelRatio) {
-    cv.width = w * devicePixelRatio;
-    cv.height = cv.getAttribute("height") * devicePixelRatio;
+  /* latch the design height ONCE: writing cv.height mutates the height
+   * attribute, so re-reading the attribute each frame creates a
+   * devicePixelRatio feedback loop (shrinks to zero at <100% zoom)    */
+  if (!cv.dataset.h) cv.dataset.h = cv.getAttribute("height");
+  const H = +cv.dataset.h, w = cv.clientWidth;
+  cv.style.height = H + "px";
+  const bw = Math.round(w * devicePixelRatio),
+        bh = Math.round(H * devicePixelRatio);
+  if (cv.width !== bw || cv.height !== bh) {
+    cv.width = bw;
+    cv.height = bh;
   }
   const g = cv.getContext("2d");
   g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  return [g, w, +cv.getAttribute("height")];
+  return [g, w, H];
 }
 
 let pkmin = null, pkmax = null, pkw = 0;
