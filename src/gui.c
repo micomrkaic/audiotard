@@ -1051,7 +1051,9 @@ static gpointer live_worker(gpointer u)
         size_t emit = r1 - t;
         if (emit > LIVE_B) emit = LIVE_B;
         size_t pre  = t > LIVE_PR ? t - LIVE_PR : 0;
-        size_t endr = t + emit + LIVE_X;
+        /* +512 pad: the final ~FIR-halflength samples of a render are
+         * edge-corrupted; keep the crossfade tail in clean interior    */
+        size_t endr = t + emit + LIVE_X + 512;
         if (endr > r1) endr = r1;
 
         audio_buf in = a->in_full;              /* slice [pre, endr)    */

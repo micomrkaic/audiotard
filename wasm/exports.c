@@ -51,7 +51,7 @@ double *at_render(double *in, int frames, int ch, int rate,
                   int os, int vinyl, int tape, double wow,
                   double flutter, double hiss, double crk_rate,
                   double crk_db, double hf_loss, double bump_db,
-                  double bw_hz, int match_rms)
+                  double bw_hz, int match_rms, int pos0)
 {
     audio_buf ib = { .data = in, .nframes = (size_t)frames,
                      .channels = (unsigned)ch, .rate = (unsigned)rate };
@@ -75,6 +75,11 @@ double *at_render(double *in, int frames, int ch, int rate,
     cp.tp.hf_loss = hf_loss;
     cp.tp.bump_db = bump_db;
     cp.vp.lp_hz = cp.tp.lp_hz = bw_hz;
+    cp.pos0 = (size_t)pos0;
+    /* Random drift cannot stay continuous across independently rendered
+     * streaming blocks (it is a random walk); wow + flutter carry the
+     * audible pitch character and ARE phase-continuous via pos0.       */
+    cp.vp.drift_cents = cp.tp.drift_cents = 0.0;
 
     if (g_out.data) audio_free(&g_out);
     if (chain_render(&ib, &g_out, &cp, match_rms) != 0) return 0;
