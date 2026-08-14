@@ -41,6 +41,7 @@
  */
 #include "audio_io.h"
 #include "chain.h"
+#include "version.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -59,6 +60,11 @@ static double lin2db(double v) { return 20.0 * log10(v + 1e-300); }
 
 int main(int argc, char **argv)
 {
+    if (argc > 1 && (!strcmp(argv[1], "--version") ||
+                     !strcmp(argv[1], "-V"))) {
+        printf("audiotard %s\n", AUDIOTARD_VERSION);
+        return 0;
+    }
     if (argc >= 2 && !strcmp(argv[1], "abx"))
         return abx_main(argc - 1, argv + 1);
 

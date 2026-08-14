@@ -32,8 +32,10 @@
 </head>
 <body>
 <h1>audiotard</h1>
-<p class="sub">calibrated distortion &middot; blind listening tests &mdash;
-live in your browser, nothing uploaded</p>
+<span style="color:#8a8a94;font-style:italic"> &mdash; because worse
+sound is better!</span>
+<p class="sub">v0.5.0 &middot; calibrated distortion &middot; blind
+listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
 <span id="status">no file loaded (drag on the waveform to loop a
@@ -43,6 +45,15 @@ selection; click to seek)</span>
 <input type="range" id="pos" min="0" max="1000" value="0" step="1">
 <span id="postime" class="val">0.0 s</span>
 
+<div style="margin-top:.4em">
+  <label>spectrum</label>
+  <select id="smode"><option value="0">no smoothing</option>
+    <option value="1">exponential</option>
+    <option value="2">moving avg</option></select>
+  <input type="number" id="samt" min="1" max="32" value="8"
+         style="width:3.5em;background:#232329;color:#c9c9d1;
+                border:1px solid #3a3a44"> frames
+</div>
 <div class="cols">
   <div><canvas id="spec" height="180"></canvas></div>
   <div style="flex:0 0 320px"><canvas id="shaper" height="180"
@@ -207,6 +218,7 @@ function startStream(pos) {
   worker.postMessage({ type:"params", p: collect(false) });
   worker.postMessage({ type:"start", pos, r0:a, r1:b });
   playing = true;
+  smMain.reset(); smClean.reset();
   playT = actx.currentTime + 0.08;
   pending = true;
   worker.postMessage({ type:"need" });          /* bootstrap the pump  */
@@ -362,6 +374,39 @@ function fftPow(x) {
 }
 
 const FN = 4096;
+function Smoother() { this.reset(); this.lm = -1; this.la = -1; }
+Smoother.prototype.reset = function () {
+  this.sm = null; this.ring = []; this.head = 0; this.init = false;
+};
+Smoother.prototype.apply = function (cur) {
+  const mode = +$("smode").value;
+  let amt = Math.min(32, Math.max(1, +$("samt").value || 1));
+  if (mode !== this.lm || amt !== this.la) {
+    this.reset(); this.lm = mode; this.la = amt;
+  }
+  if (mode === 0) return cur;
+  const n = cur.length;
+  if (mode === 1) {                    /* exponential, tau = amt frames */
+    const al = 1 - Math.exp(-1 / amt);
+    if (!this.init) { this.sm = Float64Array.from(cur); this.init = true; }
+    else for (let k = 0; k < n; k++)
+      this.sm[k] += al * (cur[k] - this.sm[k]);
+    return this.sm;
+  }
+  /* moving average over a ring of power spectra */
+  this.ring[this.head] = Float64Array.from(cur);
+  this.head = (this.head + 1) % amt;
+  if (this.ring.length > amt) this.ring.length = amt;
+  if (!this.sm || this.sm.length !== n) this.sm = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    let s = 0;
+    for (const r of this.ring) s += r[k];
+    this.sm[k] = s / this.ring.length;
+  }
+  return this.sm;
+};
+const smMain = new Smoother(), smClean = new Smoother();
+
 function drawSpec() {
   const [g, w, h] = fit($("spec"));
   g.fillStyle = "#0d0d10"; g.fillRect(0, 0, w, h);
@@ -438,14 +483,14 @@ function drawSpec() {
         ee += e * e;
         cbuf[i] *= gg;
       }
-      trace(fftPow(cbuf), "rgba(102,153,242,.85)", 1.0);
+      trace(smClean.apply(fftPow(cbuf)), "rgba(102,153,242,.85)", 1.0);
       g.fillStyle = "#fac740"; g.font = "10px monospace";
       g.fillText("residual (added dist+noise): " +
           (10 * Math.log10(ee / (gg * gg * cc) + 1e-24)).toFixed(1) +
           " dB", w - 260, 12);
     }
   }
-  trace(fftPow(buf), "#fac740", 1.2);
+  trace(smMain.apply(fftPow(buf)), "#fac740", 1.2);
 }
 
 function shaperEval(sh, drive, bias, h2a, x) {

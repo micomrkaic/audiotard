@@ -40,6 +40,7 @@
 #include "chain.h"
 #include "fft.h"
 #include "playback.h"
+#include "version.h"
 
 #include <gtk/gtk.h>
 #include <math.h>
@@ -1907,7 +1908,8 @@ static GtkWidget *scrolled(GtkWidget *child)
 static void build_ui(App *a)
 {
     a->win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(a->win), "audiotard");
+    gtk_window_set_title(GTK_WINDOW(a->win),
+                     "audiotard v" AUDIOTARD_VERSION);
     gtk_window_set_default_size(GTK_WINDOW(a->win), 1000, 700);
     g_signal_connect(a->win, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 

@@ -35,6 +35,9 @@ double audio_peak(const audio_buf *b)
     return pk;
 }
 
+__attribute__((export_name("at_version")))
+int at_version(void) { return 500; }   /* 0.5.0 -> maj*10000+min*100+p */
+
 __attribute__((export_name("at_alloc")))
 double *at_alloc(int n) { return malloc((size_t)n * sizeof(double)); }
 
