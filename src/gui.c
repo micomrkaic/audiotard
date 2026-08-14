@@ -134,6 +134,7 @@ struct App {
     int        overlay_valid;
 
     uint64_t   rng;
+    guint      tick_id;
     int        render_busy;
 
     int        sess_active;
@@ -1905,13 +1906,29 @@ static GtkWidget *scrolled(GtkWidget *child)
     return sw;
 }
 
+/* Orderly shutdown: kill the UI timer BEFORE the widgets die, or one
+ * last tick races the teardown and sprays Gtk-CRITICAL assertions.    */
+static void on_destroy(GtkWidget *w, gpointer u)
+{
+    (void)w;
+    App *a = u;
+    if (a->tick_id) {
+        g_source_remove(a->tick_id);
+        a->tick_id = 0;
+    }
+    live_stop(a);
+    player_stop(a->pl);
+    if (gtk_main_level() > 0)
+        gtk_main_quit();
+}
+
 static void build_ui(App *a)
 {
     a->win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(a->win),
                      "audiotard v" AUDIOTARD_VERSION);
     gtk_window_set_default_size(GTK_WINDOW(a->win), 1000, 700);
-    g_signal_connect(a->win, "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    g_signal_connect(a->win, "destroy", G_CALLBACK(on_destroy), a);
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_container_set_border_width(GTK_CONTAINER(outer), 8);
@@ -2290,7 +2307,7 @@ int main(int argc, char **argv)
                                       argv[1]);
         load_input(&a);
     }
-    g_timeout_add(33, tick, &a);
+    a.tick_id = g_timeout_add(33, tick, &a);
     gtk_main();
     player_free(a.pl);
     return 0;
