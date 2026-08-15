@@ -116,8 +116,15 @@ onmessage = e => {
   const m = e.data;
   if (m.type === "init")  { expectVer = m.expect | 0; init(m.url); }
   else if (m.type === "audio") {
-    clean = new Float64Array(m.buf);
+    clean = new Float32Array(m.buf);
     frames = m.frames; ch = m.ch; rate = m.rate;
+    let s = 0;
+    const probe = Math.min(clean.length, 65536);
+    for (let i = 0; i < probe; i++) s += clean[i] * clean[i];
+    if (frames > 0 && s < 1e-12)
+      postMessage({ type: "error",
+          msg: "worker received silent audio -- stale files? "
+             + "hard-refresh (Ctrl+Shift+R)" });
   }
   else if (m.type === "params") { params = m.p; gainSet = false; }
   else if (m.type === "start") {
