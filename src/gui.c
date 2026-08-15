@@ -1054,6 +1054,7 @@ static gpointer live_worker(gpointer u)
         a->live_seek = -1;
         chain_params cp = a->live_cp;
         g_mutex_unlock(&a->live_mx);
+        cp.no_trim = 1;              /* constant headroom instead      */
 
         if (sk >= 0) {
             t = (size_t)sk;
@@ -1091,7 +1092,9 @@ static gpointer live_worker(gpointer u)
                 rs += sv2 * sv2;
                 ro += blk[i] * blk[i];
             }
-            gain = (ro > 1e-12) ? sqrt(rs / ro) : 1.0;
+            /* x0.708 = -3 dB headroom: hot masters + added harmonics
+             * would clip the int16 conversion; constant, so no cue    */
+            gain = ((ro > 1e-12) ? sqrt(rs / ro) : 1.0) * 0.708;
             gain_set = 1;
         }
         for (size_t i = 0; i < emit * ch; i++)

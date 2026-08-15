@@ -47,6 +47,10 @@ typedef struct {
     size_t       pos0;        /* start frame of this buffer within the
                                  source (streaming block renders); 0 for
                                  whole-file renders                      */
+    int          no_trim;     /* 1 = skip the output headroom trim:
+                                 streaming producers manage level with a
+                                 constant gain instead (a per-block trim
+                                 would pump audibly between blocks)      */
 } chain_params;
 
 void chain_defaults(chain_params *cp);

@@ -200,7 +200,7 @@ int chain_render(const audio_buf *in, audio_buf *out,
      * (x + a*x^2 > 1 at peaks), added noise, and the RMS match can all
      * push past full scale, which hard-clips at the 16/24-bit write.
      * A global trim is transparent: pure gain, no waveshape change.   */
-    {
+    if (!cp.no_trim) {
         double pk = audio_peak(out);
         if (pk > 0.999) {
             double s = 0.999 / pk;

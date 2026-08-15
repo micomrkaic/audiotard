@@ -36,7 +36,7 @@ double audio_peak(const audio_buf *b)
 }
 
 __attribute__((export_name("at_version")))
-int at_version(void) { return 604; }   /* maj*10000 + min*100 + patch  */
+int at_version(void) { return 605; }   /* maj*10000 + min*100 + patch  */
 
 __attribute__((export_name("at_alloc")))
 double *at_alloc(int n) { return malloc((size_t)n * sizeof(double)); }
@@ -83,6 +83,7 @@ double *at_render(double *in, int frames, int ch, int rate,
      * streaming blocks (it is a random walk); wow + flutter carry the
      * audible pitch character and ARE phase-continuous via pos0.       */
     cp.vp.drift_cents = cp.tp.drift_cents = 0.0;
+    cp.no_trim = 1;   /* the browser applies a constant -3 dB headroom */
 
     if (g_out.data) audio_free(&g_out);
     if (chain_render(&ib, &g_out, &cp, match_rms) != 0) return 0;
