@@ -25,14 +25,25 @@ TAR=$(realpath "$TAR")
 
 echo "== unpacking $TAR over $DIR"
 mkdir -p "$DIR"
-# tarball contains a top-level audiotard/ directory: strip it
-tar -xzf "$TAR" -C "$DIR" --strip-components=1
+# -m: do NOT restore archive mtimes -- extracted files get the current
+# time, so make always sees them as newer than existing binaries.
+# (Without this, archive timestamps can predate your last build and
+# make silently skips recompilation of the new sources.)
+tar -xzmf "$TAR" -C "$DIR" --strip-components=1
 
 cd "$DIR"
 
 echo "== building"
 make
 make gui
+V=$(sed -n 's/#define AUDIOTARD_VERSION "\(.*\)"/\1/p' src/version.h)
+B=$(./audiotard --version | awk '{print $2}')
+if [ "$V" != "$B" ]; then
+    echo "ERROR: built binary reports $B but sources are $V" >&2
+    echo "       stale build -- run: touch src/* && make && make gui" >&2
+    exit 1
+fi
+echo "   built and verified: audiotard $B"
 echo "== self-test"
 make check > /dev/null && echo "   engine self-test passed"
 
