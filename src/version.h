@@ -5,6 +5,6 @@
 #ifndef AUDIOTARD_VERSION_H
 #define AUDIOTARD_VERSION_H
 
-#define AUDIOTARD_VERSION "0.6.0"
+#define AUDIOTARD_VERSION "0.6.1"
 
 #endif

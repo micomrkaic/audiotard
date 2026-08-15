@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.6.0 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.6.1 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -212,15 +212,20 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-worker = new Worker("worker.js");
-worker.postMessage({ type:"init", url:"audiotard.wasm" });
+const APP_V = "0.6.1";
+worker = new Worker("worker.js?v=" + APP_V);
+worker.postMessage({ type:"init",
+    url:"audiotard.wasm?v=" + APP_V, expect:601 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
 worker.onmessage = e => {
   const m = e.data;
   if (m.type === "ready") { wasmReady = true;
-    $("status").textContent += "  [dsp core loaded]"; return; }
+    $("status").textContent += m.ok
+        ? "  [dsp core v" + m.v + " loaded]"
+        : "  [VERSION MISMATCH -- hard-refresh (Ctrl+Shift+R)]";
+    return; }
   if (m.type === "error") { $("status").textContent = m.msg; return; }
   if (m.type !== "block" || !playing) return;
   pending = false;
@@ -660,8 +665,9 @@ $("abxstart").onclick = async () => {
   $("abxstat").textContent = "rendering references...";
   const p = collect(false);
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
-  const tmp = new Worker("worker.js");
-  tmp.postMessage({ type: "init", url: "audiotard.wasm" });
+  const tmp = new Worker("worker.js?v=" + APP_V);
+  tmp.postMessage({ type: "init",
+      url: "audiotard.wasm?v=" + APP_V, expect:601 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

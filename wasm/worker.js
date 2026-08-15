@@ -20,6 +20,8 @@ const HEADROOM = 0.708;
 
 function heap() { return new Float64Array(wasm.memory.buffer); }
 
+let expectVer = 0;
+
 async function init(url) {
   const imports = { wasi_snapshot_preview1:
                     new Proxy({}, { get: () => () => 0 }) };
@@ -32,7 +34,9 @@ async function init(url) {
   }
   wasm = r.instance.exports;
   if (wasm._initialize) wasm._initialize();
-  postMessage({ type: "ready" });
+  const v = wasm.at_version ? wasm.at_version() : 0;
+  postMessage({ type: "ready", v,
+                ok: !expectVer || v === expectVer });
 }
 
 function renderSpan(from, to) {           /* -> Float64 interleaved     */
@@ -110,7 +114,7 @@ function nextBlock() {
 
 onmessage = e => {
   const m = e.data;
-  if (m.type === "init")  init(m.url);
+  if (m.type === "init")  { expectVer = m.expect | 0; init(m.url); }
   else if (m.type === "audio") {
     clean = new Float64Array(m.buf);
     frames = m.frames; ch = m.ch; rate = m.rate;
