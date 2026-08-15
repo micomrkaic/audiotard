@@ -195,6 +195,22 @@ int chain_render(const audio_buf *in, audio_buf *out,
             for (size_t i = 0; i < total; i++) out->data[i] *= s;
         }
     }
+
+    /* Headroom guard: modern masters peak at -0.1 dBFS; the h2 shape
+     * (x + a*x^2 > 1 at peaks), added noise, and the RMS match can all
+     * push past full scale, which hard-clips at the 16/24-bit write.
+     * A global trim is transparent: pure gain, no waveshape change.   */
+    {
+        double pk = audio_peak(out);
+        if (pk > 0.999) {
+            double s = 0.999 / pk;
+            size_t total = out->nframes * out->channels;
+            for (size_t i = 0; i < total; i++) out->data[i] *= s;
+            fprintf(stderr, "audiotard: output trimmed %.2f dB to avoid "
+                    "clipping (hot master + added harmonics)\n",
+                    20.0 * log10(s));
+        }
+    }
     return 0;
 
 fail:

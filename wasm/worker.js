@@ -13,6 +13,10 @@ const LIVE_B = 4096, LIVE_PR = 16384, LIVE_X = 512;
 let wasm = null, clean = null, frames = 0, ch = 1, rate = 44100;
 let params = null, t = 0, r0 = 0, r1 = 0;
 let tail = null, tailOk = false, gain = 1, gainSet = false;
+/* -3 dB master headroom: hot (-0.1 dBFS) masters + added harmonics
+ * would clip at the DAC; applied identically to clean and processed
+ * so it cannot become a listening cue                                 */
+const HEADROOM = 0.708;
 
 function heap() { return new Float64Array(wasm.memory.buffer); }
 
@@ -34,7 +38,10 @@ async function init(url) {
 function renderSpan(from, to) {           /* -> Float64 interleaved     */
   const n = to - from;
   const ptr = wasm.at_alloc(n * ch);
-  heap().set(clean.subarray(from * ch, to * ch), ptr / 8);
+  {
+    const hp = heap(), base = ptr / 8, off = from * ch;
+    for (let i = 0; i < n * ch; i++) hp[base + i] = clean[off + i];
+  }
   let out = 0;
   if (!params.bypass && params.enabled) {
     out = wasm.at_render(ptr, n, ch, rate,
@@ -73,7 +80,7 @@ function nextBlock() {
       rs += s * s;
       ro += rend[off + i] * rend[off + i];
     }
-    gain = ro > 1e-12 ? Math.sqrt(rs / ro) : 1;
+    gain = (ro > 1e-12 ? Math.sqrt(rs / ro) : 1) * HEADROOM;
     gainSet = true;
   }
   for (let i = 0; i < emit * ch; i++) blk[i] = gain * rend[off + i];

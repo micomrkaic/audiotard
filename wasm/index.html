@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.5.1 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.6.0 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -145,27 +145,69 @@ for (const el of document.querySelectorAll("input,select"))
     el.addEventListener("input", pushParams);
 
 /* ------------------------------ file -------------------------------- */
+/* read the true source rate/bits from the container so hi-res files
+ * are decoded at native rate instead of the device rate               */
+function sniff(ab) {
+  const d = new DataView(ab);
+  const tag = o => String.fromCharCode(d.getUint8(o), d.getUint8(o + 1),
+                                       d.getUint8(o + 2), d.getUint8(o + 3));
+  try {
+    if (tag(0) === "RIFF" && tag(8) === "WAVE") {
+      let o = 12;
+      while (o + 8 < d.byteLength) {
+        const id = tag(o), sz = d.getUint32(o + 4, true);
+        if (id === "fmt ")
+          return { rate: d.getUint32(o + 12, true),
+                   bits: d.getUint16(o + 22, true), kind: "WAV" };
+        o += 8 + sz + (sz & 1);
+      }
+    }
+    if (tag(0) === "fLaC") {
+      const s = 8;                     /* STREAMINFO body */
+      const rate = (d.getUint8(s + 10) << 12) | (d.getUint8(s + 11) << 4)
+                 | (d.getUint8(s + 12) >> 4);
+      const bits = (((d.getUint8(s + 12) & 1) << 4)
+                 | (d.getUint8(s + 13) >> 4)) + 1;
+      return { rate, bits, kind: "FLAC" };
+    }
+  } catch (e) {}
+  return null;
+}
+
 $("file").onchange = async e => {
   const f = e.target.files[0];
   if (!f) return;
   actx = actx || new AudioContext();
-  const dec = await actx.decodeAudioData(await f.arrayBuffer());
+  const ab = await f.arrayBuffer();
+  const info = sniff(ab);
+  let decRate = info ? Math.min(192000, Math.max(8000, info.rate))
+                     : actx.sampleRate;
+  let dec;
+  try {
+    dec = await new OfflineAudioContext(2, 1, decRate)
+                   .decodeAudioData(ab);
+  } catch (err) {                        /* fall back to device rate  */
+    dec = await actx.decodeAudioData(await f.arrayBuffer());
+  }
   ch = Math.min(dec.numberOfChannels, 2);
   rate = dec.sampleRate;
   nframes = dec.length;
-  clean = new Float64Array(nframes * ch);
+  clean = new Float32Array(nframes * ch);
   for (let c = 0; c < ch; c++) {
     const d = dec.getChannelData(c);
     for (let i = 0; i < nframes; i++) clean[i * ch + c] = d[i];
   }
   haveSel = false;
+  const src = info ? `source ${info.kind} ${info.rate} Hz / ` +
+                     `${info.bits}-bit, ` : "";
   $("status").textContent =
-      `${f.name}: ${(nframes/rate).toFixed(1)} s, ${ch} ch, ${rate} Hz`;
+      `${f.name}: ${src}processing at ${rate} Hz, ` +
+      `${(nframes/rate).toFixed(1)} s, ${ch} ch`;
   $("pos").max = nframes;
   buildPeaks(); drawWf();
   worker.postMessage({ type:"audio",
       buf: clean.slice().buffer, frames:nframes, ch, rate },
-      []);        /* copy stays here for drawing + ABX */
+      []);        /* Float32 copy stays here for drawing + ABX */
   for (const b of ["play","abxstart"]) $(b).disabled = false;
 };
 
@@ -649,7 +691,9 @@ $("abxstart").onclick = async () => {
       abxClean = actx.createBuffer(ch, n, rate);
       for (let c = 0; c < ch; c++) {
         const d = abxClean.getChannelData(c);
-        for (let i = 0; i < n; i++) d[i] = clean[(a + i) * ch + c];
+        for (let i = 0; i < n; i++)
+          d[i] = 0.708 * clean[(a + i) * ch + c];  /* match worker's
+                                                      -3 dB headroom  */
       }
       running = true; t = 1; k = 0; xIsB = Math.random() < 0.5;
       for (const bt of ["pa","pb","px","xa","xb"]) $(bt).disabled = false;

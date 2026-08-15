@@ -928,6 +928,18 @@ static gboolean cr_done(gpointer u)
         if (a->ex_proc.data) audio_free(&a->ex_proc);
         a->ex_proc = j->out;
         j->out.data = NULL;
+        /* if the headroom trim engaged, re-equalize loudness so the
+         * trim itself cannot become the detection cue                  */
+        {
+            double rp = audio_rms(&a->ex_proc);
+            double rc = audio_rms(&a->ex_clean);
+            if (rc > 1e-9 && rp > 1e-9 && rp / rc < 0.999) {
+                double s = rp / rc;
+                size_t n = a->ex_clean.nframes * a->ex_clean.channels;
+                for (size_t i = 0; i < n; i++)
+                    a->ex_clean.data[i] *= s;
+            }
+        }
         a->t = 1; a->k = 0; a->n = 0;
         abx_next_x(a);
         sess_buttons(a, 1);
