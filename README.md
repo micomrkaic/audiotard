@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.6.3**
+**v0.6.4**
 
 ![audiotard](docs/banner.png)
 

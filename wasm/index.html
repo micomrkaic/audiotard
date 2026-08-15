@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.6.3 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.6.4 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -75,7 +75,7 @@ selection; click to seek)</span>
     <option value="3">h2 (pure 2nd)</option>
   </select><br>
   <label>oversampling</label>
-  <select id="os"><option>2</option><option selected>4</option>
+  <select id="os"><option selected>2</option><option>4</option>
     <option>8</option></select><br>
   <label>drive</label><input type="range" id="drive" min="0.5" max="10"
     step="0.1" value="2"><span class="val" id="drivev">2.0</span><br>
@@ -212,10 +212,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.6.3";
+const APP_V = "0.6.4";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:603 });
+    url:"audiotard.wasm?v=" + APP_V, expect:604 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -244,7 +244,12 @@ worker.onmessage = e => {
   const src = actx.createBufferSource();
   src.buffer = ab;
   src.connect(actx.destination);
-  if (playT < actx.currentTime) playT = actx.currentTime + 0.05;
+  if (playT < actx.currentTime) {
+    playT = actx.currentTime + 0.05;
+    if (blockMap.length)              /* not the very first block      */
+      $("status").textContent = "rendering can't keep up -- lower " +
+          "oversampling or uncheck media";
+  }
   src.start(playT);
   sources.push(src);
   blockMap.push({ ctx0: playT, filePos: m.filePos, frames: m.frames, mono });
@@ -667,7 +672,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:603 });
+      url: "audiotard.wasm?v=" + APP_V, expect:604 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

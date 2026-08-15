@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 clang --target=wasm32-wasi --sysroot=/usr \
     -isystem /usr/include/wasm32-wasi \
-    -O2 -std=c17 -DNDEBUG \
+    -O3 -msimd128 -std=c17 -DNDEBUG \
     -nostartfiles -Wl,--no-entry -Wl,--export=__heap_base \
     -Wl,--initial-memory=67108864 -Wl,--max-memory=1073741824 \
     -mexec-model=reactor \

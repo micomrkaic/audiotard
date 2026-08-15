@@ -8,7 +8,13 @@
  * knob-to-ear latency = scheduled lookahead + one block.               */
 "use strict";
 
-const LIVE_B = 4096, LIVE_PR = 16384, LIVE_X = 512;
+const LIVE_B = 8192, LIVE_X = 512;      /* bigger blocks: less pre-roll
+                                           overhead per emitted sample */
+/* pre-roll: media chains need long settling (envelope, noise filters);
+ * shaper-only needs little more than the FIR warm-up                  */
+function livePR() {
+  return (params && (params.vinyl || params.tape)) ? 16384 : 2048;
+}
 
 let wasm = null, clean = null, frames = 0, ch = 1, rate = 44100;
 let params = null, t = 0, r0 = 0, r1 = 0;
@@ -66,7 +72,7 @@ function renderSpan(from, to) {           /* -> Float64 interleaved     */
 function nextBlock() {
   if (t >= r1) { t = r0; tailOk = false; }
   const emit = Math.min(LIVE_B, r1 - t);
-  const pre  = Math.max(0, t - LIVE_PR);
+  const pre  = Math.max(0, t - livePR());
   /* +512 pad past the crossfade tail: the last ~140 samples of any
    * render are FIR edge-corrupted, so the tail must come from clean
    * interior                                                          */
