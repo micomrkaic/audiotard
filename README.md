@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.6.5**
+**v0.6.6**
 
 ![audiotard](docs/banner.png)
 
@@ -257,6 +257,96 @@ canvas/Web Audio on top of this module.)
   honest generalization.
 - Headless machines: set `AUDIOTARD_ALSA_DEV=null` to run the GUI with a
   real-time-paced silent sink.
+
+## Squashed bugs (full transparency)
+
+audiotard's authority rests on one claim: *the only audible difference
+between clean and processed is the distortion you dialed in.* Any defect
+that violates that claim biases results, so this project publishes its
+failure history. Bugs marked **[integrity]** could have contaminated
+listening-test results obtained before the fix -- re-run anything that
+mattered.
+
+- **Live-stream gain pumping** [integrity, fixed 0.6.5]. The output
+  headroom trim (correct for whole-file renders) was applied
+  independently to every streaming block, producing 1-3 dB level steps
+  at block seams on hot masters -- loudness being the strongest false
+  cue there is. Caught by reading the per-block trim values in stderr:
+  their variance *was* the pumping. Fixed by exempting streaming
+  renders and folding a constant -3 dB headroom into the stream gain,
+  applied identically to clean and processed.
+
+- **Digital clipping on hot masters** [integrity, fixed 0.6.0].
+  Commercial masters peak at -0.1 dBFS; the h2 shape (x + a*x^2 > 1 at
+  peaks), added noise, and RMS matching pushed renders past full scale
+  -- a test file measured 11,179 hard-clipped samples. Reported by a
+  reviewer. Fixed with a transparent output trim plus loudness
+  re-equalization in ABX preparation so the trim itself cannot become
+  a cue.
+
+- **Staircase confounds** [integrity]. A threshold session varied one
+  parameter but rendered the entire enabled chain: a hiss staircase
+  with vinyl on carried crackle 15.5 dB *above the signal* -- the
+  measured threshold was for the loudest confound, not the named
+  parameter. Caught by a listener reporting the stimulus "noisier than
+  nominal", confirmed by measurement. Fixed: staircases now isolate
+  their parameter (everything else disabled for the session).
+
+- **Media delay-line latency** [integrity]. The wow/flutter fractional
+  delay line carried ~8 samples of uncompensated constant latency, so
+  every media render was time-shifted against the source -- inaudible,
+  but it inflated the residual metric from the true value to a -20 dB
+  floor. Found while measuring the staircase fix; fixed with exact
+  integer-delay compensation (isolated hiss at -60 dBFS now reads
+  -59.9).
+
+- **Oversampler group delay and DC-blocker phase**. Building the
+  residual metric exposed two engine subtleties: FIR length did not
+  guarantee integer group delay at base rate (sub-sample misalignment,
+  -41 dB null floor), and the 5 Hz DC blocker's phase lead put a
+  -46 dB floor under every null test. Fixed (tap-count alignment;
+  corner moved to 0.5 Hz); known-distortion injections now read back
+  within 0.12 dB across -20..-50 dB.
+
+- **Tube normalization blow-up**. Normalizing the tube shape to unity
+  small-signal gain divides by g*sech^2(g*b), which collapses at high
+  drive*bias -- a x326 gain explosion at extreme settings. Caught the
+  moment the transfer-view panel rendered it off-scale. Both shapes
+  are now span-normalized: bounded output for any knob combination,
+  harmonic profile unchanged.
+
+- **Browser: silence from a type mismatch** [0.6.0-0.6.2]. A patch
+  converting the streaming worker's audio buffer to Float32 silently
+  failed to apply (its search anchor missed), so the worker
+  reinterpreted Float32 samples through a Float64 view: denormal
+  garbage, i.e. silence, with all scheduling still running. The
+  toolchain compounded it by "verifying" a hand-written replica of the
+  worker instead of the shipped file. Fixed in 0.6.3; process fixed
+  too: patches now assert their anchors, verification executes the
+  actual artifact, and a version gate blocks inconsistent releases.
+
+- **Browser: render starvation** [fixed 0.6.4]. Each 93 ms block
+  dragged 371 ms of pre-roll -- a 5.25x work multiplier that pushed
+  throughput to ~1x realtime on modest CPUs: playback consumed its
+  lookahead and stopped. Fixed with pre-roll adapted to the enabled
+  chain, larger blocks, a SIMD build, and an explicit "can't keep up"
+  notice instead of silent stalling (measured: shaper-only now ~11x
+  realtime).
+
+- Assorted honest embarrassments: a synchronous render freezing the
+  GTK UI (moved to a worker thread); a GTK shutdown race spraying
+  Gtk-CRITICAL assertions (teardown ordered; proven clean under
+  G_DEBUG=fatal-criticals); the browser's first block never being
+  requested (pump bootstrap deadlock); canvases shrinking to zero at
+  <100% zoom (a devicePixelRatio feedback loop); deploys silently
+  skipping recompilation because tar restored archive timestamps
+  (deploy now extracts with fresh mtimes and *verifies the built
+  binary's version*).
+
+Most of these were found by the tool's own instrumentation pointed at
+itself -- the residual metric, the null test, the transfer view, a
+reviewer's ears. That is the method the project sells; it would be
+strange not to use it.
 
 ## License
 
