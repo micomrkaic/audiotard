@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.7.0**
+**v0.7.1**
 
 ![audiotard](docs/banner.png)
 
@@ -258,7 +258,7 @@ canvas/Web Audio on top of this module.)
 - Headless machines: set `AUDIOTARD_ALSA_DEV=null` to run the GUI with a
   real-time-paced silent sink.
 
-## Speaker load: the damping-factor simulator (v0.7.0)
+## Speaker load: the damping-factor simulator
 
 The one historically *audible* tube-amp effect is linear: the amp's
 output impedance forms a voltage divider with the loudspeaker's

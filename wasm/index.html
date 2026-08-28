@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.7.0 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.7.1 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -98,6 +98,21 @@ selection; click to seek)</span>
     max="-10" step="1" value="-33"><span class="val" id="crkdbv">-33</span>
 </fieldset>
 </div>
+<fieldset><legend>speaker load (amp output impedance -- the one tube
+effect that was ever audible)</legend>
+  <label>speaker</label>
+  <select id="spkmodel">
+    <option value="0" selected>off</option>
+    <option value="1">sealed 2-way (8 ohm)</option>
+    <option value="2">bass-reflex 2-way (8 ohm)</option>
+    <option value="3">bass-reflex (4 ohm)</option>
+    <option value="4">difficult 4 ohm (big impedance swings)</option>
+  </select>
+  <label style="margin-left:1em">amp Zout (ohm)</label>
+  <input type="range" id="spkzout" min="0" max="4" step="0.05" value="1">
+  <span class="val" id="spkzoutv">1.00</span>
+  <span id="dftext" style="color:#8a8a94"></span>
+</fieldset>
 
 <fieldset><legend>ABX (16 trials, fixed level, uses the selection)</legend>
   <button id="abxstart" disabled>start</button>
@@ -131,8 +146,9 @@ function collect(bypass) {
     vinyl:$("vinyl").checked?1:0, tape:$("tape").checked?1:0,
     wow:+$("wow").value, flutter:+$("flutter").value, hiss:+$("hiss").value,
     crkRate:12, crkDb:+$("crkdb").value, hfLoss:0.35, bumpDb:3, bwHz:15000,
+    spkModel:+$("spkmodel").value, spkZout:+$("spkzout").value,
     bypass: !!bypass };
-  p.enabled = p.shape > 0 || p.vinyl || p.tape;
+  p.enabled = p.shape > 0 || p.vinyl || p.tape || p.spkModel > 0;
   return p;
 }
 function updDF() {
@@ -223,10 +239,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.7.0";
+const APP_V = "0.7.1";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:700 });
+    url:"audiotard.wasm?v=" + APP_V, expect:701 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -683,7 +699,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:700 });
+      url: "audiotard.wasm?v=" + APP_V, expect:701 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,
