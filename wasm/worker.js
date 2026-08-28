@@ -58,7 +58,8 @@ function renderSpan(from, to) {           /* -> Float64 interleaved     */
         params.shape, params.drive, params.bias, params.h2db, params.os,
         params.vinyl, params.tape, params.wow, params.flutter,
         params.hiss, params.crkRate, params.crkDb, params.hfLoss,
-        params.bumpDb, params.bwHz, 0, from);
+        params.bumpDb, params.bwHz, params.spkModel | 0,
+        params.spkZout || 0, 0, from);
     if (!out) postMessage({ type: "error",
         msg: "DSP render FAILED (out of memory?) -- playing clean" });
   }

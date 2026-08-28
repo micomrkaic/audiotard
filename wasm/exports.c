@@ -36,7 +36,7 @@ double audio_peak(const audio_buf *b)
 }
 
 __attribute__((export_name("at_version")))
-int at_version(void) { return 606; }   /* maj*10000 + min*100 + patch  */
+int at_version(void) { return 700; }   /* maj*10000 + min*100 + patch  */
 
 __attribute__((export_name("at_alloc")))
 double *at_alloc(int n) { return malloc((size_t)n * sizeof(double)); }
@@ -54,7 +54,8 @@ double *at_render(double *in, int frames, int ch, int rate,
                   int os, int vinyl, int tape, double wow,
                   double flutter, double hiss, double crk_rate,
                   double crk_db, double hf_loss, double bump_db,
-                  double bw_hz, int match_rms, int pos0)
+                  double bw_hz, int spk_model, double spk_zout,
+                  int match_rms, int pos0)
 {
     audio_buf ib = { .data = in, .nframes = (size_t)frames,
                      .channels = (unsigned)ch, .rate = (unsigned)rate };
@@ -78,6 +79,8 @@ double *at_render(double *in, int frames, int ch, int rate,
     cp.tp.hf_loss = hf_loss;
     cp.tp.bump_db = bump_db;
     cp.vp.lp_hz = cp.tp.lp_hz = bw_hz;
+    cp.spk_model = spk_model;
+    cp.spk_zout  = spk_zout;
     cp.pos0 = (size_t)pos0;
     /* Random drift cannot stay continuous across independently rendered
      * streaming blocks (it is a random walk); wow + flutter carry the

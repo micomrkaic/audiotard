@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.6.6 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.7.0 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -119,7 +119,7 @@ let selA = 0, selB = 0, haveSel = false;
 /* ------------------------------ params ------------------------------ */
 const SLIDERS = [["drive","drivev",1],["bias","biasv",2],["h2db","h2dbv",0],
   ["wow","wowv",1],["flutter","flutterv",1],["hiss","hissv",0],
-  ["crkdb","crkdbv",0]];
+  ["crkdb","crkdbv",0],["spkzout","spkzoutv",2]];
 for (const [id, vid, fix] of SLIDERS)
   $(id).addEventListener("input",
       () => $(vid).textContent = (+$(id).value).toFixed(fix));
@@ -135,6 +135,17 @@ function collect(bypass) {
   p.enabled = p.shape > 0 || p.vinyl || p.tape;
   return p;
 }
+function updDF() {
+  const zo = +$("spkzout").value, mo = +$("spkmodel").value;
+  const znom = (mo === 3 || mo === 4) ? 4 : 8;
+  $("dftext").textContent = zo > 0.01
+      ? `  DF ${(znom / zo).toFixed(0)} re ${znom} ohm`
+      : "  DF = infinite (ideal amp)";
+}
+$("spkzout").addEventListener("input", updDF);
+$("spkmodel").addEventListener("input", updDF);
+updDF();
+
 let bypassed = false;
 function pushParams() {
   if (worker) worker.postMessage({ type:"params", p: collect(bypassed) });
@@ -212,10 +223,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.6.6";
+const APP_V = "0.7.0";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:606 });
+    url:"audiotard.wasm?v=" + APP_V, expect:700 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -672,7 +683,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:606 });
+      url: "audiotard.wasm?v=" + APP_V, expect:700 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

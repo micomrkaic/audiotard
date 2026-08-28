@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.6.6**
+**v0.7.0**
 
 ![audiotard](docs/banner.png)
 
@@ -257,6 +257,27 @@ canvas/Web Audio on top of this module.)
   honest generalization.
 - Headless machines: set `AUDIOTARD_ALSA_DEV=null` to run the GUI with a
   real-time-paced silent sink.
+
+## Speaker load: the damping-factor simulator (v0.7.0)
+
+The one historically *audible* tube-amp effect is linear: the amp's
+output impedance forms a voltage divider with the loudspeaker's
+frequency-dependent impedance, tilting the response by
+|Z(f)/(Z(f)+Zout)|. audiotard simulates it with synthetic parametric
+speaker models (voice-coil R and L plus bass resonances -- sealed: one
+hump; bass-reflex: twin humps straddling the port; "difficult 4 ohm":
+low R, big L, deep humps):
+
+```sh
+./audiotard in.flac out.wav --spkload reflex8:1.6   # model:Zout_ohms
+```
+
+Damping factor = Znom/Zout, so 1.6 ohm into 8 ohm is DF 5 (classic
+single-ended-triode territory); solid state at 0.05 ohm is DF 160+
+and audibly flat. Implementation: least-squares-fitted biquad sections
+matching the analytic divider (verified within 0.9 dB worst-case,
+typically under 0.35 dB, against exact tone renders across all four
+models). Applied last in the chain -- it is the amp-speaker interface.
 
 ## Squashed bugs (full transparency)
 

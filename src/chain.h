@@ -47,6 +47,9 @@ typedef struct {
     size_t       pos0;        /* start frame of this buffer within the
                                  source (streaming block renders); 0 for
                                  whole-file renders                      */
+    int          spk_model;   /* 0=off 1=sealed8 2=reflex8 3=reflex4
+                                 4=difficult4                            */
+    double       spk_zout;    /* amp output impedance, ohms             */
     int          no_trim;     /* 1 = skip the output headroom trim:
                                  streaming producers manage level with a
                                  constant gain instead (a per-block trim
@@ -89,6 +92,14 @@ const char    *sc_check_enabled(const chain_params *cp, sc_param id);
  * mechanism, so a threshold measures that parameter and not a constant
  * confound (crackle riding along in a hiss test, etc.).                */
 void           sc_isolate(chain_params *cp, sc_param id);
+
+/* Output-impedance x speaker-impedance interaction ("damping factor"):
+ * synthesizes |Z(f)/(Z(f)+Zout)| for a parametric speaker model as
+ * least-squares-fitted biquad sections (up to 8) plus a flat makeup
+ * gain; matches the analytic response within ~0.3 dB, 0 dB at 1 kHz.  */
+#define SPK_MAX_SECTIONS 8
+int            spk_sections(int model, double zout, eq_spec *out,
+                            double *makeup_db);
 void           sc_print_value(const sc_info *si, double scalar,
                               char *buf, size_t n);
 

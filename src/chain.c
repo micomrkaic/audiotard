@@ -39,6 +39,7 @@ void chain_defaults(chain_params *cp)
     cp->tp      = TAPE_DEFAULTS;
     cp->os      = 8;
     cp->gain_db = 0.0;
+    cp->spk_zout = 1.0;        /* DF 8 -- typical push-pull tube amp   */
 }
 
 static int parse_eq(const char *s, eq_spec *e)
@@ -85,6 +86,21 @@ int chain_parse(chain_params *cp, int argc, char **argv, int *i)
                                    return 1; }
     if (!strcmp(a, "--gain-in")) { TAKE(cp->gain_db);   return 1; }
 
+    if (!strcmp(a, "--spkload")) {
+        if (!v) die("missing value: --spkload model:zout_ohms");
+        char mn[16] = {0};
+        double zo = 1.0;
+        if (sscanf(v, "%15[a-z0-9]:%lf", mn, &zo) < 1)
+            die("bad --spkload (want model:zout, e.g. reflex8:1.5)");
+        if      (!strcmp(mn, "sealed8")) cp->spk_model = 1;
+        else if (!strcmp(mn, "reflex8")) cp->spk_model = 2;
+        else if (!strcmp(mn, "reflex4")) cp->spk_model = 3;
+        else if (!strcmp(mn, "hard4"))   cp->spk_model = 4;
+        else die("unknown speaker model (sealed8|reflex8|reflex4|hard4)");
+        cp->spk_zout = zo;
+        (*i)++;                        /* consumed the value token     */
+        return 1;
+    }
     if (!strcmp(a, "--vinyl"))   { cp->use_vinyl = 1;   return 1; }
     if (!strcmp(a, "--tape"))    { cp->use_tape  = 1;   return 1; }
 
@@ -179,6 +195,25 @@ int chain_render(const audio_buf *in, audio_buf *out,
             bq_design(&q, cp.eq[b].t, (double)in->rate,
                       cp.eq[b].f, cp.eq[b].Q, cp.eq[b].g);
             bq_process(&q, chan, in->nframes);
+        }
+
+        /* amp output impedance x speaker load: the amplifier-speaker
+         * interface, so it is applied last                             */
+        {
+            eq_spec spk[SPK_MAX_SECTIONS];
+            double mk_db = 0.0;
+            int nspk = spk_sections(cp.spk_model, cp.spk_zout, spk,
+                                    &mk_db);
+            for (int s = 0; s < nspk; s++) {
+                biquad q;
+                bq_design(&q, spk[s].t, (double)in->rate,
+                          spk[s].f, spk[s].Q, spk[s].g);
+                bq_process(&q, chan, in->nframes);
+            }
+            if (nspk) {
+                double mk = pow(10.0, mk_db / 20.0);
+                for (size_t i = 0; i < in->nframes; i++) chan[i] *= mk;
+            }
         }
 
         for (size_t i = 0; i < in->nframes; i++)
@@ -306,9 +341,168 @@ void sc_print_value(const sc_info *si, double s, char *buf, size_t n)
     else           snprintf(buf, n, "%.2f %s", pow(10.0, s / 20.0), si->unit);
 }
 
+/* Parametric loudspeaker impedance models: voice-coil Re + Le plus up
+ * to two motional resonances (parallel-RLC humps). Sealed: one hump.
+ * Bass-reflex: twin humps straddling the port tuning. "Difficult":
+ * low Re, big Le, deep humps -- the load that makes tube amps audible. */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+typedef struct { double f0, rp, q; } spk_res;
+typedef struct {
+    double  re, le;
+    spk_res r[2];
+    int     nres;
+} spk_model_t;
+
+static const spk_model_t SPK[] = {
+    { 0,   0,      {{0,0,0},{0,0,0}},               0 },  /* off      */
+    { 6.4, 0.6e-3, {{55, 34, 3.0},{0,0,0}},         1 },  /* sealed8  */
+    { 6.4, 0.7e-3, {{28, 24, 4.0},{68, 28, 4.0}},   2 },  /* reflex8  */
+    { 3.2, 0.4e-3, {{25, 14, 4.0},{62, 16, 4.0}},   2 },  /* reflex4  */
+    { 2.9, 0.9e-3, {{24, 12, 5.0},{55, 14, 5.0}},   2 },  /* hard4    */
+};
+
+/* |H(f)| = |Z/(Z+Zout)| from the complex impedance                    */
+static double spk_h(const spk_model_t *m, double zout, double f)
+{
+    double zr = m->re, zi = 2.0 * M_PI * f * m->le;
+    for (int k = 0; k < m->nres; k++) {
+        double d   = f / m->r[k].f0 - m->r[k].f0 / f;
+        double qd  = m->r[k].q * d;
+        double den = 1.0 + qd * qd;
+        zr += m->r[k].rp / den;
+        zi -= m->r[k].rp * qd / den;
+    }
+    double dr = zr + zout;
+    return sqrt((zr * zr + zi * zi) / (dr * dr + zi * zi));
+}
+
+/* |H| of a designed biquad at frequency f (z-transform on the unit
+ * circle) -- lets us anchor the shelf exactly                          */
+static double bq_mag_at(const eq_spec *e, double fs, double f)
+{
+    biquad q;
+    bq_design(&q, e->t, fs, e->f, e->Q, e->g);
+    double w = 2.0 * M_PI * f / fs;
+    double c1 = cos(w), s1 = sin(w), c2 = cos(2 * w), s2 = sin(2 * w);
+    double nr = q.b0 + q.b1 * c1 + q.b2 * c2;
+    double ni = -(q.b1 * s1 + q.b2 * s2);
+    double dr = 1.0 + q.a1 * c1 + q.a2 * c2;
+    double di = -(q.a1 * s1 + q.a2 * s2);
+    return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+
+int spk_sections(int model, double zout, eq_spec *out, double *makeup_db)
+{
+    *makeup_db = 0.0;
+    if (model <= 0 || model > 4 || zout <= 0.001) return 0;
+    const spk_model_t *m = &SPK[model];
+    double h1k = spk_h(m, zout, 1000.0);
+
+    /* target curve on a log grid */
+    enum { NF = 80 };
+    double fg[NF], tg[NF];
+    for (int i = 0; i < NF; i++) {
+        fg[i] = 22.0 * pow(21000.0 / 22.0, (double)i / (NF - 1));
+        tg[i] = 20.0 * log10(spk_h(m, zout, fg[i]) / h1k);
+    }
+
+    /* basis layout: resonance peaks, midpoint correctors, shelves     */
+    eq_spec b[SPK_MAX_SECTIONS];
+    int nb = 0;
+    b[nb++] = (eq_spec){ BQ_LOWSHELF, 34.0, 0.7071, 1.0 };
+    for (int k = 0; k < m->nres; k++)
+        b[nb++] = (eq_spec){ BQ_PEAK, m->r[k].f0, m->r[k].q, 1.0 };
+    if (m->nres == 2)
+        b[nb++] = (eq_spec){ BQ_PEAK,
+                             sqrt(m->r[0].f0 * m->r[1].f0), 2.2, 1.0 };
+    double flast = m->nres ? m->r[m->nres - 1].f0 : 60.0;
+    b[nb++] = (eq_spec){ BQ_PEAK, sqrt(flast * 400.0), 1.0, 1.0 };
+    b[nb++] = (eq_spec){ BQ_PEAK, 400.0, 0.9, 1.0 };
+    double fsh = (m->re + zout) / (2.0 * M_PI * m->le);
+    b[nb++] = (eq_spec){ BQ_HIGHSHELF, fsh, 0.7071, 1.0 };
+
+    /* two rounds: fit gains by least squares on unit-gain dB shapes
+     * (cascade dB adds exactly; shape-vs-gain is near-linear here)    */
+    double g[SPK_MAX_SECTIONS] = { 0 };
+    for (int round = 0; round < 2; round++) {
+        double res[NF];
+        for (int i = 0; i < NF; i++) {
+            double have = 0.0;
+            for (int j = 0; j < nb; j++) {
+                if (fabs(g[j]) < 1e-9) continue;
+                eq_spec e = b[j]; e.g = g[j];
+                have += 20.0 * log10(bq_mag_at(&e, 96000.0, fg[i]));
+            }
+            res[i] = tg[i] - have;
+        }
+        double S[SPK_MAX_SECTIONS][NF];
+        for (int j = 0; j < nb; j++)
+            for (int i = 0; i < NF; i++)
+                S[j][i] = 20.0 * log10(bq_mag_at(&b[j], 96000.0, fg[i]));
+        double A[SPK_MAX_SECTIONS][SPK_MAX_SECTIONS + 1];
+        for (int j = 0; j < nb; j++) {
+            for (int k = 0; k < nb; k++) {
+                double s = 0;
+                for (int i = 0; i < NF; i++) s += S[j][i] * S[k][i];
+                A[j][k] = s + (j == k ? 1e-6 : 0.0);
+            }
+            double s = 0;
+            for (int i = 0; i < NF; i++) s += S[j][i] * res[i];
+            A[j][nb] = s;
+        }
+        for (int p = 0; p < nb; p++) {          /* Gauss elimination   */
+            int piv = p;
+            for (int r = p + 1; r < nb; r++)
+                if (fabs(A[r][p]) > fabs(A[piv][p])) piv = r;
+            for (int k = 0; k <= nb; k++) {
+                double tswap = A[p][k]; A[p][k] = A[piv][k];
+                A[piv][k] = tswap;
+            }
+            for (int r = p + 1; r < nb; r++) {
+                double f = A[r][p] / A[p][p];
+                for (int k = p; k <= nb; k++) A[r][k] -= f * A[p][k];
+            }
+        }
+        for (int p = nb - 1; p >= 0; p--) {
+            double s = A[p][nb];
+            for (int k = p + 1; k < nb; k++) s -= A[p][k] * (g[k] - 0.0);
+            /* solve for delta, accumulate */
+            double delta = s;
+            for (int k = p + 1; k < nb; k++) ;
+            (void)delta;
+            double d = A[p][nb];
+            for (int k = p + 1; k < nb; k++) d -= A[p][k] * A[k][SPK_MAX_SECTIONS];
+            A[p][SPK_MAX_SECTIONS] = d / A[p][p];
+        }
+        for (int j = 0; j < nb; j++) g[j] += A[j][SPK_MAX_SECTIONS];
+    }
+
+    /* exact 0 dB at 1 kHz via makeup */
+    double at1k = 0.0;
+    for (int j = 0; j < nb; j++) {
+        if (fabs(g[j]) < 1e-9) continue;
+        eq_spec e = b[j]; e.g = g[j];
+        at1k += 20.0 * log10(bq_mag_at(&e, 96000.0, 1000.0));
+    }
+    *makeup_db = -at1k;
+
+    int n = 0;
+    for (int j = 0; j < nb; j++)
+        if (fabs(g[j]) > 0.01) {
+            out[n] = b[j];
+            out[n].g = g[j];
+            n++;
+        }
+    return n;
+}
+
 void sc_isolate(chain_params *cp, sc_param id)
 {
     cp->neq = 0;
+    cp->spk_model = 0;
     switch (id) {
     case SC_H2DB:
     case SC_DRIVE:

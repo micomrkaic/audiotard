@@ -84,6 +84,7 @@ struct App {
     GtkWidget *btn_pause, *sel_label;
     GtkWidget *shape_combo, *os_combo, *drive, *bias, *h2db;
     GtkWidget *vinyl_chk, *tape_chk;
+    GtkWidget *spk_combo, *spk_zout;
     GtkWidget *wow, *flutter, *hiss, *crk_rate, *crk_db, *hf_loss,
               *bump, *bw;
     GtkWidget *hp_chk, *hp_f, *hp_q;
@@ -207,6 +208,9 @@ static void collect_params(App *a, chain_params *cp)
     cp->vp.crackle_db = sv(a->crk_db);
     cp->tp.hf_loss = sv(a->hf_loss);
     cp->tp.bump_db = sv(a->bump);
+    cp->spk_model  = gtk_combo_box_get_active(
+                         GTK_COMBO_BOX(a->spk_combo));
+    cp->spk_zout   = sv(a->spk_zout);
     cp->vp.lp_hz = cp->tp.lp_hz = sv(a->bw);
 
     /* parametric filters -> EQ chain (applied after media stages) */
@@ -230,7 +234,8 @@ static void collect_params(App *a, chain_params *cp)
 
 static int chain_enabled(const chain_params *cp)
 {
-    return cp->use_shape || cp->use_vinyl || cp->use_tape || cp->neq > 0;
+    return cp->use_shape || cp->use_vinyl || cp->use_tape || cp->neq > 0
+        || cp->spk_model > 0;
 }
 
 static void live_stop(App *a);
@@ -2182,6 +2187,25 @@ static void build_ui(App *a)
     a->bw       = add_scale(g2, 8, "Bandwidth (Hz)", 8000.0, 20000.0,
                             250.0, 15000.0,
         "Overall bandwidth of the simulated medium (low-pass).");
+
+    GtkWidget *g6s;
+    frame_grid(col2, "Speaker load (amp output impedance sim)", &g6s);
+    a->spk_combo = gtk_combo_box_text_new();
+    for (const char **s = (const char *[]){ "off", "sealed 2-way (8 ohm)",
+             "bass-reflex 2-way (8 ohm)", "bass-reflex (4 ohm)",
+             "difficult 4 ohm (big impedance swings)", NULL }; *s; s++)
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(a->spk_combo),
+                                       *s);
+    gtk_combo_box_set_active(GTK_COMBO_BOX(a->spk_combo), 0);
+    gtk_widget_set_tooltip_text(a->spk_combo,
+        "Synthetic loudspeaker impedance models (voice-coil R+L plus "
+        "bass resonances). The response tilt is |Z/(Z+Zout)| -- what "
+        "a high-output-impedance amp really does to the sound.");
+    gtk_grid_attach(GTK_GRID(g6s), a->spk_combo, 0, 0, 2, 1);
+    a->spk_zout = add_scale(g6s, 1, "Amp Zout (ohm)", 0.0, 4.0, 0.05, 1.0,
+        "Amplifier output impedance. Damping factor = Znom/Zout: "
+        "1.6 ohm into 8 ohm is DF 5 (classic tube territory); solid "
+        "state is 0.05 ohm or less (DF > 160, inaudible).");
 
     GtkWidget *g3;
     frame_grid(col2, "Render", &g3);
