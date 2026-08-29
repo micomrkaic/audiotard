@@ -83,7 +83,7 @@ struct App {
     GtkWidget *fscale_combo, *smooth_combo, *smooth_spin, *metric_label;
     GtkWidget *btn_pause, *sel_label;
     GtkWidget *shape_combo, *os_combo, *drive, *bias, *h2db;
-    GtkWidget *vinyl_chk, *tape_chk;
+    GtkWidget *vinyl_chk, *tape_chk, *shellac_chk, *shellac_era;
     GtkWidget *spk_combo, *spk_zout;
     GtkWidget *wow, *flutter, *hiss, *crk_rate, *crk_db, *hf_loss,
               *bump, *bw;
@@ -200,6 +200,12 @@ static void collect_params(App *a, chain_params *cp)
     cp->wsp.bias  = sv(a->bias);
     cp->h2db      = sv(a->h2db);
     cp->use_vinyl = chk(a->vinyl_chk);
+    cp->use_shellac = chk(a->shellac_chk);
+    cp->shp.era = gtk_combo_box_get_active(GTK_COMBO_BOX(a->shellac_era));
+    cp->shp.wow_cents     = sv(a->wow);
+    cp->shp.hiss_db       = sv(a->hiss);
+    cp->shp.crackle_per_s = sv(a->crk_rate);
+    cp->shp.crackle_db    = sv(a->crk_db);
     cp->use_tape  = chk(a->tape_chk);
     cp->vp.wow_cents = cp->tp.wow_cents = sv(a->wow);
     cp->tp.flutter_cents = sv(a->flutter);
@@ -235,7 +241,7 @@ static void collect_params(App *a, chain_params *cp)
 static int chain_enabled(const chain_params *cp)
 {
     return cp->use_shape || cp->use_vinyl || cp->use_tape || cp->neq > 0
-        || cp->spk_model > 0;
+        || cp->spk_model > 0 || cp->use_shellac;
 }
 
 static void live_stop(App *a);
@@ -1438,6 +1444,10 @@ static void chain_describe(const chain_params *cp, char *buf, size_t n)
         else APP(" drive=%.1f bias=%.2f", cp->wsp.drive, cp->wsp.bias);
         APP(" os=%dx", cp->os);
     }
+    if (cp->use_shellac)
+        APP(" | shellac-%s wow=%.1fc hiss=%.0fdB",
+            cp->shp.era ? "electric" : "acoustic",
+            cp->shp.wow_cents, cp->shp.hiss_db);
     if (cp->use_tape)
         APP(" | tape wow=%.1fc flut=%.1fc hiss=%.0fdB hf=%.2f",
             cp->tp.wow_cents, cp->tp.flutter_cents, cp->tp.hiss_db,
@@ -2163,6 +2173,23 @@ static void build_ui(App *a)
     GtkWidget *hb = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     gtk_box_pack_start(GTK_BOX(hb), a->vinyl_chk, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(hb), a->tape_chk, FALSE, FALSE, 0);
+    a->shellac_chk = gtk_check_button_new_with_label("Shellac 78");
+    gtk_widget_set_tooltip_text(a->shellac_chk,
+        "78 rpm shellac disc: mono, 1.3 Hz wow, loud abrasive-filler "
+        "surface noise, dense crackle. Runs first in the media chain "
+        "(it is the oldest source). Uses the wow / hiss / crackle "
+        "sliders below.");
+    gtk_box_pack_start(GTK_BOX(hb), a->shellac_chk, FALSE, FALSE, 0);
+    a->shellac_era = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(a->shellac_era),
+                                   "acoustic horn (pre-1925)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(a->shellac_era),
+                                   "electric (1925+)");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(a->shellac_era), 0);
+    gtk_widget_set_tooltip_text(a->shellac_era,
+        "Acoustic: 250 Hz - 6 kHz with a 1.5 kHz horn resonance. "
+        "Electric: 100 Hz - 8 kHz, no horn.");
+    gtk_box_pack_start(GTK_BOX(hb), a->shellac_era, FALSE, FALSE, 0);
     gtk_grid_attach(GTK_GRID(g2), hb, 0, 0, 2, 1);
     a->wow      = add_scale(g2, 1, "Wow (cents)",      0.0, 30.0, 0.5, 8.0,
         "Peak pitch deviation of the slow speed instability "

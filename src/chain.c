@@ -37,6 +37,7 @@ void chain_defaults(chain_params *cp)
     cp->h2db    = -30.0;
     cp->vp      = VINYL_DEFAULTS;
     cp->tp      = TAPE_DEFAULTS;
+    cp->shp     = SHELLAC_DEFAULTS;
     cp->os      = 8;
     cp->gain_db = 0.0;
     cp->spk_zout = 1.0;        /* DF 8 -- typical push-pull tube amp   */
@@ -86,6 +87,15 @@ int chain_parse(chain_params *cp, int argc, char **argv, int *i)
                                    return 1; }
     if (!strcmp(a, "--gain-in")) { TAKE(cp->gain_db);   return 1; }
 
+    if (!strcmp(a, "--shellac")) {
+        if (!v) die("missing value: --shellac acoustic|electric");
+        if      (!strcmp(v, "acoustic")) cp->shp.era = 0;
+        else if (!strcmp(v, "electric")) cp->shp.era = 1;
+        else die("unknown shellac era (acoustic|electric)");
+        cp->use_shellac = 1;
+        (*i)++;
+        return 1;
+    }
     if (!strcmp(a, "--spkload")) {
         if (!v) die("missing value: --spkload model:zout_ohms");
         char mn[16] = {0};
@@ -174,6 +184,13 @@ int chain_render(const audio_buf *in, audio_buf *out,
     for (unsigned c = 0; c < in->channels; c++) {
         for (size_t i = 0; i < in->nframes; i++)
             chan[i] = g_in * in->data[i * in->channels + c];
+        if (cp.use_shellac && in->channels > 1)   /* a 78 is mono      */
+            for (size_t i = 0; i < in->nframes; i++) {
+                double s = 0.0;
+                for (unsigned cc = 0; cc < in->channels; cc++)
+                    s += in->data[i * in->channels + cc];
+                chan[i] = g_in * s / in->channels;
+            }
 
         if (cp.use_shape) {
             if (ws_process(chan, tmp, in->nframes, (double)in->rate,
@@ -182,6 +199,10 @@ int chain_render(const audio_buf *in, audio_buf *out,
             memcpy(chan, tmp, in->nframes * sizeof *chan);
         }
         double t0 = (double)cp.pos0 / (double)in->rate;
+        if (cp.use_shellac &&
+            shellac_process(chan, in->nframes, (double)in->rate,
+                            &cp.shp, t0))
+            goto fail;
         if (cp.use_tape &&
             tape_process(chan, in->nframes, (double)in->rate, &cp.tp, c,
                          t0))
@@ -503,6 +524,7 @@ void sc_isolate(chain_params *cp, sc_param id)
 {
     cp->neq = 0;
     cp->spk_model = 0;
+    cp->use_shellac = 0;
     switch (id) {
     case SC_H2DB:
     case SC_DRIVE:

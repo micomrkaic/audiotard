@@ -308,8 +308,77 @@ int vinyl_process(double *buf, size_t n, double fs,
 }
 
 /* ====================================================================== */
-/* Tape                                                                   */
+/* Shellac 78                                                             */
 /* ====================================================================== */
+
+const shellac_params SHELLAC_DEFAULTS = {
+    .era = 0, .wow_cents = 12.0, .hiss_db = -38.0,
+    .crackle_per_s = 120.0, .crackle_db = -30.0,
+};
+
+/* A 78 rpm shellac disc. Mono by nature (the caller folds channels).
+ * Acoustic era (pre-1925): horn-cut, ~250 Hz - 6 kHz with a mid horn
+ * resonance. Electric era: ~100 Hz - 8 kHz, no horn. Both: 1.3 Hz
+ * eccentricity wow, loud continuous abrasive-filler noise, and dense
+ * crackle. Noise is seeded per-time only (not per-channel): a mono
+ * groove hisses identically into both playback channels.               */
+int shellac_process(double *buf, size_t n, double fs,
+                    const shellac_params *p, double t0)
+{
+    const double WOW_RATE = 78.0 / 60.0;          /* one rev = 1.3 Hz  */
+    double a_wow = mod_amp_samples(p->wow_cents, WOW_RATE, fs);
+
+    dline dl;
+    if (dline_init(&dl, a_wow) != 0) return -1;
+
+    int    acoustic = (p->era == 0);
+    double f_hp = acoustic ? 250.0  : 100.0;
+    double f_lp = acoustic ? 6000.0 : 8000.0;
+    biquad hp, lp1, lp2, horn, crk;
+    bq_design(&hp,   BQ_HIGHPASS, fs, f_hp,   0.7071, 0.0);
+    bq_design(&lp1,  BQ_LOWPASS,  fs, f_lp,   0.7071, 0.0);
+    bq_design(&lp2,  BQ_LOWPASS,  fs, f_lp,   0.7071, 0.0);
+    bq_design(&horn, BQ_PEAK,     fs, 1500.0, 2.2,    acoustic ? 5.0
+                                                               : 0.0);
+    bq_design(&crk,  BQ_BANDPASS, fs, 2500.0, 1.5,    0.0);
+
+    uint64_t tmix = (uint64_t)(t0 * 1000.0) * 0x100000001b3ULL;
+    uint64_t hiss_seed = 0x78787878aa55aa55ULL ^ tmix;
+    uint64_t crk_seed  = 0x78c0ffeec0ffee01ULL ^ tmix;
+    /* frand2 is uniform on [-1,1] (RMS 1/sqrt(3)): normalize so the
+     * hiss_db setting is the actual RMS level                          */
+    double hiss_g = pow(10.0, p->hiss_db / 20.0) * 1.7320508;
+    double crk_g  = pow(10.0, p->crackle_db / 20.0);
+    double pcrk   = p->crackle_per_s / fs;
+
+    double ph  = fmod(2.0 * M_PI * WOW_RATE * t0, 2.0 * M_PI);
+    double dph = 2.0 * M_PI * WOW_RATE / fs;
+
+    for (size_t i = 0; i < n; i++) {
+        double y = dline_tick(&dl, buf[i], a_wow * sin(ph));
+        ph += dph;
+
+        y = bq_tick(&hp,   y);
+        y = bq_tick(&horn, y);
+        y = bq_tick(&lp1,  y);
+        y = bq_tick(&lp2,  y);
+
+        /* abrasive shellac filler: loud, white-ish, continuous       */
+        y += hiss_g * frand2(&hiss_seed);
+
+        double imp = 0.0;
+        if (pcrk > 0.0 && frand(&crk_seed) < pcrk) {
+            double a = exp(3.0 * (frand(&crk_seed) - 1.0));
+            imp = crk_g * a * (frand(&crk_seed) < 0.5 ? -1.0 : 1.0);
+        }
+        y += bq_tick(&crk, imp);
+
+        buf[i] = y;
+    }
+    dline_compensate(buf, n, &dl);
+    free(dl.buf);
+    return 0;
+}
 
 int tape_process(double *buf, size_t n, double fs,
                  const tape_params *p, unsigned channel, double t0)

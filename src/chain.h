@@ -36,6 +36,8 @@ typedef struct {
     int          use_shape;
     ws_params    wsp;
     double       h2db;        /* calibrated at render time vs input peak */
+    int          use_shellac;  /* 78 rpm: folds to mono, runs first  */
+    shellac_params shp;
     int          use_vinyl;
     vinyl_params vp;
     int          use_tape;

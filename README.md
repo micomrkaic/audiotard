@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.7.1**
+**v0.8.0**
 
 ![audiotard](docs/banner.png)
 
@@ -257,6 +257,26 @@ canvas/Web Audio on top of this module.)
   honest generalization.
 - Headless machines: set `AUDIOTARD_ALSA_DEV=null` to run the GUI with a
   real-time-paced silent sink.
+
+## Shellac 78
+
+The far end of the "worse sound is better" axis, with no mystique to
+debunk: a 78 rpm shellac disc. Mono by nature (channels are folded),
+1.3 Hz eccentricity wow, loud continuous abrasive-filler surface noise
+(the hiss slider sets its true RMS), dense crackle, and two eras:
+*acoustic horn* (pre-1925: 250 Hz - 6 kHz, 24 dB/oct top, +5 dB horn
+resonance at 1.5 kHz) or *electric* (100 Hz - 8 kHz). Runs first in
+the media chain -- it is the oldest source, so shellac + tape + vinyl
+is a 78 dubbed to tape and cut to LP.
+
+```sh
+./audiotard in.flac out.wav --shellac acoustic
+```
+
+Calibration is verified like everything else: band corners within the
+biquad math, noise floor exact to the slider (-38.0 dBFS measured for
+a -38 setting), wow +-12.2 cents measured at exactly 1.3 Hz for a
+12-cent setting.
 
 ## Speaker load: the damping-factor simulator
 

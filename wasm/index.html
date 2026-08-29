@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.7.1 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.8.0 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -86,7 +86,12 @@ selection; click to seek)</span>
 </fieldset>
 <fieldset><legend>media</legend>
   <label><input type="checkbox" id="vinyl"> vinyl</label>
-  <label><input type="checkbox" id="tape"> tape</label><br>
+  <label><input type="checkbox" id="tape"> tape</label>
+  <label><input type="checkbox" id="shellac"> shellac 78</label>
+  <select id="shellacera">
+    <option value="1" selected>acoustic horn</option>
+    <option value="2">electric era</option>
+  </select><br>
   <label>wow (cents)</label><input type="range" id="wow" min="0" max="30"
     step="0.5" value="8"><span class="val" id="wowv">8.0</span><br>
   <label>flutter (cents)</label><input type="range" id="flutter" min="0"
@@ -147,8 +152,10 @@ function collect(bypass) {
     wow:+$("wow").value, flutter:+$("flutter").value, hiss:+$("hiss").value,
     crkRate:12, crkDb:+$("crkdb").value, hfLoss:0.35, bumpDb:3, bwHz:15000,
     spkModel:+$("spkmodel").value, spkZout:+$("spkzout").value,
+    shellac: $("shellac").checked ? +$("shellacera").value : 0,
     bypass: !!bypass };
-  p.enabled = p.shape > 0 || p.vinyl || p.tape || p.spkModel > 0;
+  p.enabled = p.shape > 0 || p.vinyl || p.tape || p.spkModel > 0
+      || p.shellac > 0;
   return p;
 }
 function updDF() {
@@ -239,10 +246,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.7.1";
+const APP_V = "0.8.0";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:701 });
+    url:"audiotard.wasm?v=" + APP_V, expect:800 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -699,7 +706,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:701 });
+      url: "audiotard.wasm?v=" + APP_V, expect:800 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,
