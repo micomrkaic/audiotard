@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.8.0 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.8.1 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -158,6 +158,15 @@ function collect(bypass) {
       || p.shellac > 0;
   return p;
 }
+/* a disc is one format: vinyl and shellac are mutually exclusive
+ * (tape combines with either -- that is a dub chain)                  */
+$("shellac").addEventListener("input", () => {
+  if ($("shellac").checked) $("vinyl").checked = false;
+});
+$("vinyl").addEventListener("input", () => {
+  if ($("vinyl").checked) $("shellac").checked = false;
+});
+
 function updDF() {
   const zo = +$("spkzout").value, mo = +$("spkmodel").value;
   const znom = (mo === 3 || mo === 4) ? 4 : 8;
@@ -246,10 +255,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.8.0";
+const APP_V = "0.8.1";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:800 });
+    url:"audiotard.wasm?v=" + APP_V, expect:801 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -706,7 +715,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:800 });
+      url: "audiotard.wasm?v=" + APP_V, expect:801 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

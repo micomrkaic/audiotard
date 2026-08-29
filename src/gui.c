@@ -1952,6 +1952,18 @@ static void on_destroy(GtkWidget *w, gpointer u)
         gtk_main_quit();
 }
 
+/* vinyl and shellac are both disc formats: checking one unchecks the
+ * other (tape combines with either -- a dub chain)                    */
+static void on_disc_exclusive(GtkToggleButton *b, gpointer u)
+{
+    App *a = u;
+    if (!gtk_toggle_button_get_active(b)) return;
+    GtkToggleButton *other = (GtkWidget *)b == a->shellac_chk
+        ? GTK_TOGGLE_BUTTON(a->vinyl_chk)
+        : GTK_TOGGLE_BUTTON(a->shellac_chk);
+    gtk_toggle_button_set_active(other, FALSE);
+}
+
 static void build_ui(App *a)
 {
     a->win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -2190,6 +2202,10 @@ static void build_ui(App *a)
         "Acoustic: 250 Hz - 6 kHz with a 1.5 kHz horn resonance. "
         "Electric: 100 Hz - 8 kHz, no horn.");
     gtk_box_pack_start(GTK_BOX(hb), a->shellac_era, FALSE, FALSE, 0);
+    g_signal_connect(a->vinyl_chk,   "toggled",
+                     G_CALLBACK(on_disc_exclusive), a);
+    g_signal_connect(a->shellac_chk, "toggled",
+                     G_CALLBACK(on_disc_exclusive), a);
     gtk_grid_attach(GTK_GRID(g2), hb, 0, 0, 2, 1);
     a->wow      = add_scale(g2, 1, "Wow (cents)",      0.0, 30.0, 0.5, 8.0,
         "Peak pitch deviation of the slow speed instability "

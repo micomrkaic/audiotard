@@ -93,6 +93,9 @@ int chain_parse(chain_params *cp, int argc, char **argv, int *i)
         else if (!strcmp(v, "electric")) cp->shp.era = 1;
         else die("unknown shellac era (acoustic|electric)");
         cp->use_shellac = 1;
+        if (cp->use_vinyl)
+            die("--shellac and --vinyl are mutually exclusive (one "
+                "disc, one format; --tape combines with either)");
         (*i)++;
         return 1;
     }
@@ -111,7 +114,13 @@ int chain_parse(chain_params *cp, int argc, char **argv, int *i)
         (*i)++;                        /* consumed the value token     */
         return 1;
     }
-    if (!strcmp(a, "--vinyl"))   { cp->use_vinyl = 1;   return 1; }
+    if (!strcmp(a, "--vinyl"))   {
+        cp->use_vinyl = 1;
+        if (cp->use_shellac)
+            die("--shellac and --vinyl are mutually exclusive (one "
+                "disc, one format; --tape combines with either)");
+        return 1;
+    }
     if (!strcmp(a, "--tape"))    { cp->use_tape  = 1;   return 1; }
 
     if (!strcmp(a, "--wow-cents")) {
