@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.9.1**
+**v0.10.0**
 
 ![audiotard](docs/banner.png)
 
@@ -257,6 +257,29 @@ canvas/Web Audio on top of this module.)
   honest generalization.
 - Headless machines: set `AUDIOTARD_ALSA_DEV=null` to run the GUI with a
   real-time-paced silent sink.
+
+## Internet radio (0.10.0, browser)
+
+Live streams through the whole chain: pick a station (or paste any
+https stream URL), connect, and every effect -- shaper, media, AM,
+tone, EQ, speaker load -- applies in real time, with bypass for live
+comparison. **Capture last 20 s as clip** snapshots the raw stream
+into the normal pipeline, where the full instrument works on it,
+including ABX: hear something on air, capture it, blind-test yourself
+on it.
+
+Two constraints come from the browser, not from us: the station must
+send CORS headers (or Web Audio hands us silence by design -- the
+page detects this and says so instead of playing dead), and it must
+be https. The curated list is Radio Paradise's endpoints, which are
+CORS-open and lossless-capable; lists rot, so the custom field plus
+honest error reporting is the real interface. Engineering: chunks
+feed a history ring for media-effect pre-roll, emission is delayed
+1024 frames so FIR-edge-corrupted render tails never reach the ear,
+seams crossfade over 512 samples, and output gain is frozen from the
+first block like file streaming (no pumping). Native GTK stays
+file-based for now: TLS + stream codecs would be the first real
+dependencies of the project.
 
 ## AM radio, tone dials, parametric EQ (0.9.x)
 

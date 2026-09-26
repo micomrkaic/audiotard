@@ -79,6 +79,100 @@ function renderSpan(from, to) {           /* -> Float64 interleaved     */
   return res;
 }
 
+/* ------------------------- internet radio -------------------------- */
+/* Push-based live path: chunks arrive, a ring holds recent history for
+ * media-effect pre-roll, emission is delayed by R_PAD so the FIR-edge-
+ * corrupted render tail never reaches the ear, and consecutive renders
+ * crossfade over LIVE_X at the seam exactly like file streaming.      */
+const R_PAD = 1024, RINGF = 1 << 18;         /* frames                 */
+let rRing = null, rCh = 2, rW = 0, rE = 0, rTail = null;
+let rGain = 1, rGainSet = false;
+
+function ringCopy(fromAbs, toAbs, dst) {     /* -> interleaved Float64 */
+  for (let f = fromAbs; f < toAbs; f++) {
+    const s = (f % RINGF) * rCh, d = (f - fromAbs) * rCh;
+    for (let c = 0; c < rCh; c++) dst[d + c] = rRing[s + c];
+  }
+}
+
+function radioChunk(f32) {
+  const n = f32.length / rCh;
+  for (let i = 0; i < n; i++) {
+    const s = ((rW + i) % RINGF) * rCh;
+    for (let c = 0; c < rCh; c++) rRing[s + c] = f32[i * rCh + c];
+  }
+  rW += n;
+  const emitEnd = rW - R_PAD;
+  if (emitEnd <= rE) return;                 /* bootstrap              */
+  const emitStart = rE;
+  const pre = Math.max(rW - RINGF + 8, Math.max(0, emitStart - livePR()));
+
+  const nn = rW - pre;
+  const ptr = wasm.at_alloc(nn * rCh);
+  {
+    const hp = heap();
+    const tmp = new Float64Array(nn * rCh);
+    ringCopy(pre, rW, tmp);
+    hp.set(tmp, ptr / 8);
+  }
+  let out = 0;
+  if (params && !params.bypass && params.enabled) {
+    const eq = params.eq || [];
+    if (eq.length) {
+      const ep = wasm.at_alloc(eq.length * 4);
+      heap().set([].concat(...eq), ep / 8);
+      wasm.at_eq(eq.length, ep);
+      wasm.at_free(ep);
+    } else wasm.at_eq(0, 0);
+    out = wasm.at_render(ptr, nn, rCh, rate,
+        params.shape, params.drive, params.bias, params.h2db, params.os,
+        params.vinyl, params.tape, params.wow, params.flutter,
+        params.hiss, params.crkRate, params.crkDb, params.hfLoss,
+        params.bumpDb, params.bwHz, params.spkModel | 0,
+        params.spkZout || 0, params.shellac | 0, params.am | 0,
+        params.amBw || 4500, params.amDepth || 0.95,
+        params.bassDb || 0, params.trebleDb || 0, 0, pre);
+  }
+  const src = out ? out : ptr;
+  const hp = heap(), base = src / 8;
+
+  if (!rGainSet) {                            /* frozen radio gain     */
+    let rs = 0, ro = 0;
+    const m = (emitEnd - emitStart) * rCh, o0 = (emitStart - pre) * rCh;
+    for (let i = 0; i < m; i++) {
+      const cv = rRing[((emitStart + (i / rCh | 0)) % RINGF) * rCh
+                       + i % rCh];
+      rs += cv * cv; ro += hp[base + o0 + i] ** 2;
+    }
+    rGain = ro > 1e-12 ? Math.sqrt(rs / ro) * 0.708 : 1;
+    rGainSet = true;
+  }
+
+  const emitN = emitEnd - emitStart, o0 = (emitStart - pre) * rCh;
+  const blk = new Float32Array(emitN * rCh);
+  for (let i = 0; i < emitN * rCh; i++) blk[i] = hp[base + o0 + i] * rGain;
+
+  if (rTail) {                                /* seam crossfade        */
+    const X = Math.min(LIVE_X, emitN);
+    for (let i = 0; i < X; i++) {
+      const w = i / X;
+      for (let c = 0; c < rCh; c++)
+        blk[i * rCh + c] = (1 - w) * rTail[i * rCh + c]
+                         + w * blk[i * rCh + c];
+    }
+  }
+  rTail = new Float32Array(LIVE_X * rCh);     /* next seam: processed
+      samples at [emitEnd, emitEnd+X) from THIS render                 */
+  const t0 = (emitEnd - pre) * rCh;
+  const avail = Math.min(LIVE_X, rW - emitEnd);
+  for (let i = 0; i < avail * rCh; i++)
+    rTail[i] = hp[base + t0 + i] * rGain;
+
+  wasm.at_free(ptr);
+  rE = emitEnd;
+  postMessage({ type: "radioblock", buf: blk.buffer }, [blk.buffer]);
+}
+
 function nextBlock() {
   if (t >= r1) { t = r0; tailOk = false; }
   const emit = Math.min(LIVE_B, r1 - t);
@@ -148,4 +242,13 @@ onmessage = e => {
     tailOk = false; gainSet = false;
   }
   else if (m.type === "need") nextBlock();
+  else if (m.type === "radiostart") {
+    rCh = m.ch; rate = m.rate; ch = m.ch;
+    rRing = new Float32Array(RINGF * rCh);
+    rW = 0; rE = 0; rTail = null; rGainSet = false;
+  }
+  else if (m.type === "radio") {
+    if (rRing) radioChunk(new Float32Array(m.buf));
+  }
+  else if (m.type === "radiostop") { rRing = null; rTail = null; }
 };

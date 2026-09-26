@@ -34,10 +34,28 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.9.1 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.10.0 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
+<fieldset><legend>internet radio (stations must be https and send CORS
+headers, or the browser hands us silence -- their rule, not ours)</legend>
+  <select id="rstation">
+    <option value="https://stream.radioparadise.com/aac-320">Radio
+      Paradise -- Main (AAC 320)</option>
+    <option value="https://stream.radioparadise.com/mellow-flac">Radio
+      Paradise -- Mellow (FLAC)</option>
+    <option value="https://stream.radioparadise.com/rock-flac">Radio
+      Paradise -- Rock (FLAC)</option>
+    <option value="https://stream.radioparadise.com/global-flac">Radio
+      Paradise -- Global (FLAC)</option>
+    <option value="custom">custom URL:</option>
+  </select>
+  <input type="text" id="rurl" size="34" placeholder="https://..."
+    style="background:#232329;color:#c9c9d1;border:1px solid #3a3a44">
+  <button id="rconnect">connect</button>
+  <button id="rcapture" disabled>capture last 20 s as clip</button>
+</fieldset>
 <span id="status">no file loaded (drag on the waveform to loop a
 selection; click to seek)</span>
 
@@ -272,6 +290,22 @@ function sniff(ab) {
   return null;
 }
 
+function adoptClip(f32, nch, srate, label) {
+  radioStop();
+  ch = nch; rate = srate; nframes = f32.length / nch;
+  clean = f32;
+  haveSel = false;
+  $("status").textContent =
+      `${label}: processing at ${rate} Hz, ` +
+      `${(nframes/rate).toFixed(1)} s, ${ch} ch`;
+  $("pos").max = nframes;
+  buildPeaks(); drawWf();
+  worker.postMessage({ type:"audio",
+      buf: clean.slice().buffer, frames:nframes, ch, rate },
+      []);        /* Float32 copy stays here for drawing + ABX */
+  for (const b of ["play","abxstart"]) $(b).disabled = false;
+}
+
 $("file").onchange = async e => {
   const f = e.target.files[0];
   if (!f) return;
@@ -287,33 +321,141 @@ $("file").onchange = async e => {
   } catch (err) {                        /* fall back to device rate  */
     dec = await actx.decodeAudioData(await f.arrayBuffer());
   }
-  ch = Math.min(dec.numberOfChannels, 2);
-  rate = dec.sampleRate;
-  nframes = dec.length;
-  clean = new Float32Array(nframes * ch);
-  for (let c = 0; c < ch; c++) {
+  const nch = Math.min(dec.numberOfChannels, 2);
+  const f32 = new Float32Array(dec.length * nch);
+  for (let c = 0; c < nch; c++) {
     const d = dec.getChannelData(c);
-    for (let i = 0; i < nframes; i++) clean[i * ch + c] = d[i];
+    for (let i = 0; i < dec.length; i++) f32[i * nch + c] = d[i];
   }
-  haveSel = false;
-  const src = info ? `source ${info.kind} ${info.rate} Hz / ` +
-                     `${info.bits}-bit, ` : "";
-  $("status").textContent =
-      `${f.name}: ${src}processing at ${rate} Hz, ` +
-      `${(nframes/rate).toFixed(1)} s, ${ch} ch`;
-  $("pos").max = nframes;
-  buildPeaks(); drawWf();
-  worker.postMessage({ type:"audio",
-      buf: clean.slice().buffer, frames:nframes, ch, rate },
-      []);        /* Float32 copy stays here for drawing + ABX */
-  for (const b of ["play","abxstart"]) $(b).disabled = false;
+  const src = info ? ` (source ${info.kind} ${info.rate} Hz / ` +
+                     `${info.bits}-bit)` : "";
+  adoptClip(f32, nch, dec.sampleRate, f.name + src);
 };
 
+/* --------------------------- internet radio ------------------------ */
+let rEl = null, rSrc = null, rProc = null, rOn = false;
+let capRing = null, capW = 0, outFifo = [], rZeroCheck = 0;
+const CAP_S = 20;
+
+function radioStop() {
+  if (!rOn) return;
+  rOn = false;
+  try { rProc.disconnect(); rSrc.disconnect(); } catch (e) {}
+  try { rEl.pause(); rEl.src = ""; } catch (e) {}
+  worker.postMessage({ type: "radiostop" });
+  outFifo = [];
+  $("rconnect").textContent = "connect";
+  $("rcapture").disabled = true;
+}
+
+function radioStart() {
+  stopStream();
+  actx = actx || new AudioContext();
+  actx.resume();
+  const url = $("rstation").value === "custom"
+      ? $("rurl").value.trim() : $("rstation").value;
+  if (!url.startsWith("https://")) {
+    $("status").textContent =
+      "radio: need an https:// stream URL (http is blocked as " +
+      "mixed content on an https page)";
+    return;
+  }
+  rEl = new Audio();
+  rEl.crossOrigin = "anonymous";
+  rEl.id = "rel";
+  rEl.src = url;
+  rEl.onerror = () => { $("status").textContent =
+    "radio: stream failed to load -- URL wrong, station down, or no " +
+    "CORS headers"; radioStop(); };
+  rEl.addEventListener("playing", onRadioPlaying);
+  rEl.play().catch(err => { $("status").textContent =
+    "radio: " + err.message; });
+  $("status").textContent = "radio: connecting...";
+}
+
+function onRadioPlaying() {
+  if (rOn) return;
+  rOn = true;
+  const rch = 2;
+  rSrc = rSrc || actx.createMediaElementSource(rEl);
+  rProc = actx.createScriptProcessor(4096, rch, rch);
+  capRing = new Float32Array(CAP_S * actx.sampleRate * rch | 0);
+  capW = 0; outFifo = []; rZeroCheck = 0;
+  worker.postMessage({ type: "radiostart", ch: rch,
+                       rate: actx.sampleRate });
+  pushParams();
+  rProc.onaudioprocess = ev => {
+    const n = ev.inputBuffer.length;
+    const f = new Float32Array(n * rch);
+    for (let c = 0; c < rch; c++) {
+      const d = ev.inputBuffer.getChannelData(
+          Math.min(c, ev.inputBuffer.numberOfChannels - 1));
+      for (let i = 0; i < n; i++) f[i * rch + c] = d[i];
+    }
+    for (let i = 0; i < f.length; i++) {          /* capture ring    */
+      capRing[capW % capRing.length] = f[i]; capW++;
+    }
+    worker.postMessage({ type: "radio", buf: f.slice().buffer },
+                       [f.slice().buffer]);
+    /* CORS-taint tripwire: playing but every sample is zero          */
+    if (rZeroCheck >= 0) {
+      let s = 0; for (const v of f) s += v * v;
+      rZeroCheck = s > 1e-9 ? -1 : rZeroCheck + n;
+      if (rZeroCheck > actx.sampleRate * 2) {
+        $("status").textContent = "radio: stream is PLAYING but the " +
+          "browser gives us only zeros -- the station does not send " +
+          "CORS headers, so sample access is blocked. Try another.";
+        rZeroCheck = -1;
+      }
+    }
+    const out = ev.outputBuffer;                  /* pull processed  */
+    let need = n, wrote = 0;
+    while (need > 0 && outFifo.length) {
+      const b = outFifo[0], take = Math.min(need, b.length / rch);
+      for (let c = 0; c < rch; c++) {
+        const d = out.getChannelData(c);
+        for (let i = 0; i < take; i++)
+          d[wrote + i] = b[(i) * rch + c];
+      }
+      if (take * rch === b.length) outFifo.shift();
+      else outFifo[0] = b.subarray(take * rch);
+      need -= take; wrote += take;
+    }
+    for (let c = 0; c < rch; c++) {
+      const d = out.getChannelData(c);
+      for (let i = wrote; i < n; i++) d[i] = 0;
+    }
+  };
+  rSrc.connect(rProc);
+  rProc.connect(actx.destination);
+  $("rconnect").textContent = "disconnect";
+  $("rcapture").disabled = false;
+  $("status").textContent = "radio: live -- full chain applies; " +
+    "bypass to compare; capture to ABX";
+}
+
+$("rconnect").onclick = () => rOn ? radioStop() : radioStart();
+$("rcapture").onclick = () => {
+  if (!capRing) return;
+  const rch = 2, len = Math.min(capW, capRing.length);
+  const f32 = new Float32Array(len);
+  const start = capW - len;
+  for (let i = 0; i < len; i++)
+    f32[i] = capRing[(start + i) % capRing.length];
+  adoptClip(f32, rch, actx.sampleRate, "radio capture");
+};
+
+
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.9.1";
+const APP_V = "0.10.0";
 worker = new Worker("worker.js?v=" + APP_V);
+worker.addEventListener("message", ev => {
+  if (ev.data.type === "radioblock" && rOn)
+    outFifo.push(new Float32Array(ev.data.buf));
+  if (outFifo.length > 24) outFifo.shift();       /* runaway guard   */
+});
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:901 });
+    url:"audiotard.wasm?v=" + APP_V, expect:1000 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -770,7 +912,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:901 });
+      url: "audiotard.wasm?v=" + APP_V, expect:1000 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,
