@@ -102,6 +102,16 @@ setTimeout(async () => {
   const radioSeq = workerMsgs.map(m => m[0])
       .filter(t => t.startsWith('radio')).join(' ');
   console.log('radio worker sequence:', radioSeq || 'NONE');
+  // bypass must be live in radio mode and must reach the worker
+  const byp = d.getElementById('bypass');
+  if (byp.disabled) errors.push('bypass still disabled in radio mode');
+  const before = workerMsgs.length;
+  try { byp.onclick(); } catch (e) {
+    errors.push('BYPASS THREW: ' + e.message); }
+  const pm = workerMsgs.slice(before).find(m => m[0] === 'params');
+  if (!pm || pm[1].p.bypass !== true)
+    errors.push('bypass click did not reach worker with bypass:true');
+  else { byp.onclick(); }              /* toggle back to processed   */
   // radioblock -> spectrum rings -> a tick draws the radio spectrum
   const wk = dom.window.__worker;
   if (wk && wk.listeners.length) {
