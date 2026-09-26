@@ -169,8 +169,14 @@ function radioChunk(f32) {
     rTail[i] = hp[base + t0 + i] * rGain;
 
   wasm.at_free(ptr);
+  const cln = new Float32Array(emitN * rCh);      /* aligned raw span */
+  for (let i = 0; i < emitN; i++) {
+    const s = ((emitStart + i) % RINGF) * rCh;
+    for (let c = 0; c < rCh; c++) cln[i * rCh + c] = rRing[s + c];
+  }
   rE = emitEnd;
-  postMessage({ type: "radioblock", buf: blk.buffer }, [blk.buffer]);
+  postMessage({ type: "radioblock", buf: blk.buffer, cbuf: cln.buffer },
+              [blk.buffer, cln.buffer]);
 }
 
 function nextBlock() {

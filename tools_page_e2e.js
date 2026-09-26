@@ -10,15 +10,17 @@ const dom = new JSDOM(html, {
   url: 'http://localhost/',
   beforeParse(w) {
     w.devicePixelRatio = 1;
-    w.requestAnimationFrame = () => 0;
+    w.__raf = null;
+    w.requestAnimationFrame = cb => { w.__raf = cb; return 0; };
     w.HTMLCanvasElement.prototype.getContext = () => ({
       setTransform(){}, fillRect(){}, fillText(){}, beginPath(){},
       moveTo(){}, lineTo(){}, stroke(){}, fill(){},
     });
     w.Worker = class {
-      constructor(url) { this.url = url; workerMsgs.push(['NEW', url]); }
+      constructor(url) { this.url = url; workerMsgs.push(['NEW', url]);
+        this.listeners = []; w.__worker = this; }
       postMessage(m) { workerMsgs.push([m.type, m]); }
-      addEventListener() {}
+      addEventListener(t, f) { this.listeners.push(f); }
       terminate() {}
     };
     const fakeBuf = (n, ch, rate) => ({
@@ -100,6 +102,18 @@ setTimeout(async () => {
   const radioSeq = workerMsgs.map(m => m[0])
       .filter(t => t.startsWith('radio')).join(' ');
   console.log('radio worker sequence:', radioSeq || 'NONE');
+  // radioblock -> spectrum rings -> a tick draws the radio spectrum
+  const wk = dom.window.__worker;
+  if (wk && wk.listeners.length) {
+    const FB = 8192;
+    const fake = { data: { type: 'radioblock',
+      buf: new Float32Array(FB).fill(0.1).buffer,
+      cbuf: new Float32Array(FB).fill(0.1).buffer } };
+    try { for (const f of wk.listeners) { f(fake); f(fake); } }
+    catch (e) { errors.push('RADIOBLOCK HANDLER THREW: ' + e.message); }
+    try { dom.window.__raf && dom.window.__raf(); }
+    catch (e) { errors.push('TICK THREW (radio spectrum): ' + e.message); }
+  } else errors.push('no worker message listener registered');
   // capture path
   try { d.getElementById('rcapture').onclick(); } catch (e) {
     errors.push('CAPTURE THREW: ' + e.message); }

@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.10.0 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.10.1 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -376,6 +376,8 @@ function radioStart() {
 function onRadioPlaying() {
   if (rOn) return;
   rOn = true;
+  rate = actx.sampleRate;          /* spectrum axis follows the stream */
+  radFill = 0;
   const rch = 2;
   rSrc = rSrc || actx.createMediaElementSource(rEl);
   rProc = actx.createScriptProcessor(4096, rch, rch);
@@ -447,15 +449,30 @@ $("rcapture").onclick = () => {
 
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.10.0";
+const APP_V = "0.10.1";
 worker = new Worker("worker.js?v=" + APP_V);
+let radM = null, radC = null, radFill = 0;    /* radio spectrum rings */
 worker.addEventListener("message", ev => {
-  if (ev.data.type === "radioblock" && rOn)
-    outFifo.push(new Float32Array(ev.data.buf));
+  if (ev.data.type !== "radioblock" || !rOn) return;
+  const b = new Float32Array(ev.data.buf);
+  outFifo.push(b);
   if (outFifo.length > 24) outFifo.shift();       /* runaway guard   */
+  /* rolling mono FN-windows of processed + aligned clean, for the
+   * spectrum -- same overlay + residual as file mode                 */
+  if (!radM) { radM = new Float64Array(FN); radC = new Float64Array(FN); }
+  const c = new Float32Array(ev.data.cbuf), n = b.length / 2;
+  const keep = Math.max(0, FN - n);
+  radM.copyWithin(0, radM.length - keep);
+  radC.copyWithin(0, radC.length - keep);
+  const w0 = Math.max(0, n - FN);
+  for (let i = w0; i < n; i++) {
+    radM[keep + i - w0] = 0.5 * (b[i * 2] + b[i * 2 + 1]);
+    radC[keep + i - w0] = 0.5 * (c[i * 2] + c[i * 2 + 1]);
+  }
+  radFill = Math.min(FN, radFill + n);
 });
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:1000 });
+    url:"audiotard.wasm?v=" + APP_V, expect:1001 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -721,17 +738,22 @@ function drawSpec() {
     g.fillStyle = "#7a7a84";
     g.fillText(db.toString(), 3, db === 0 ? y + 9 : y - 2);
   }
-  const ap = audiblePos();
-  if (!ap) return;
-  /* gather FN mono samples ending at the audible position */
-  const buf = new Float64Array(FN);
-  let need = FN, bi = ap.blk, off = ap.off;
-  while (need > 0 && bi >= 0) {
-    const m = blockMap[bi].mono;
-    const take = Math.min(need, off);
-    buf.set(m.subarray(off - take, off), need - take);
-    need -= take;
-    bi--; off = bi >= 0 ? blockMap[bi].mono.length : 0;
+  let buf, rcb = null, ap = null;
+  if (rOn && radFill >= FN) {          /* radio: rings feed the fft  */
+    buf = radM; rcb = radC;
+  } else {
+    ap = audiblePos();
+    if (!ap) return;
+    /* gather FN mono samples ending at the audible position */
+    buf = new Float64Array(FN);
+    let need = FN, bi = ap.blk, off = ap.off;
+    while (need > 0 && bi >= 0) {
+      const m = blockMap[bi].mono;
+      const take = Math.min(need, off);
+      buf.set(m.subarray(off - take, off), need - take);
+      need -= take;
+      bi--; off = bi >= 0 ? blockMap[bi].mono.length : 0;
+    }
   }
   const trace = (pw, color, lw) => {
     g.strokeStyle = color; g.lineWidth = lw; g.beginPath();
@@ -754,16 +776,20 @@ function drawSpec() {
     g.stroke(); g.lineWidth = 1;
   };
 
-  /* clean reference at the same file position, gain-fitted: the
-   * browser edition of the GTK overlay + residual metric              */
-  if (ap.fpos >= FN && clean) {
-    const cbuf = new Float64Array(FN);
+  /* clean reference at the same position, gain-fitted: the browser
+   * edition of the GTK overlay + residual metric                      */
+  let cbuf = null;
+  if (rcb) cbuf = Float64Array.from(rcb);
+  else if (ap && ap.fpos >= FN && clean) {
+    cbuf = new Float64Array(FN);
     for (let i = 0; i < FN; i++) {
       let s = 0;
       const f = ap.fpos - FN + i;
       for (let c = 0; c < ch; c++) s += clean[f * ch + c];
       cbuf[i] = s / ch;
     }
+  }
+  if (cbuf) {
     let cc = 0, cp = 0;
     for (let i = 0; i < FN; i++) { cc += cbuf[i] * cbuf[i];
                                    cp += cbuf[i] * buf[i]; }
@@ -873,7 +899,7 @@ function tick() {
     $("pos").value = ap.fpos;
     $("postime").textContent = (ap.fpos / rate).toFixed(1) + " s";
     drawSpec();
-  }
+  } else if (rOn && radFill >= FN) drawSpec();
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -912,7 +938,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:1000 });
+      url: "audiotard.wasm?v=" + APP_V, expect:1001 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,
