@@ -308,6 +308,88 @@ int vinyl_process(double *buf, size_t n, double fs,
 }
 
 /* ====================================================================== */
+/* AM radio                                                               */
+/* ====================================================================== */
+
+const am_params AM_DEFAULTS = {
+    .bw_hz = 4500.0, .hp_hz = 120.0, .depth = 0.95, .comp = 0.5,
+    .static_per_s = 4.0, .static_db = -36.0, .hiss_db = -55.0,
+    .fade_db = 0.0,
+};
+
+/* Broadcast AM chain, mono by nature (the caller folds channels):
+ * transmitter compression / receiver AGC, envelope detection with
+ * overmodulation fold when depth > 1, the channel + IF band (4th-order
+ * top), atmospheric static crashes (band-limited by riding through the
+ * same filters), post-detector hiss, and optional slow skywave fade.
+ * Broadcast AM is DSB; a "communications" flavor is simply a narrower
+ * bw_hz. No delay line, so no latency to compensate.                  */
+int am_process(double *buf, size_t n, double fs,
+               const am_params *p, double t0)
+{
+    biquad hp, lp1, lp2;
+    bq_design(&hp,  BQ_HIGHPASS, fs, p->hp_hz, 0.7071, 0.0);
+    bq_design(&lp1, BQ_LOWPASS,  fs, p->bw_hz, 0.7071, 0.0);
+    bq_design(&lp2, BQ_LOWPASS,  fs, p->bw_hz, 0.7071, 0.0);
+
+    uint64_t tmix = (uint64_t)(t0 * 1000.0) * 0x100000001b3ULL;
+    uint64_t sseed = 0xa11ceedbadc0ffeeULL ^ tmix;
+    uint64_t hseed = 0xbeefbeefbeef0001ULL ^ tmix;
+    double stg = pow(10.0, p->static_db / 20.0);
+    double hg  = pow(10.0, p->hiss_db / 20.0) * 1.7320508;
+    double pst = p->static_per_s / fs;
+
+    double env = 0.0;
+    double att = exp(-1.0 / (0.005 * fs));
+    double rel = exp(-1.0 / (0.200 * fs));
+    const double REF = 0.25;
+
+    double phf  = fmod(2.0 * M_PI * 0.15 * t0, 2.0 * M_PI);
+    double dphf = 2.0 * M_PI * 0.15 / fs;
+    double m = p->depth > 0.05 ? p->depth : 0.05;
+
+    for (size_t i = 0; i < n; i++) {
+        double x = buf[i];
+
+        /* compression / AGC: downward on loud, gentle lift on quiet,
+         * capped at +12 dB so silence is not noise-pumped              */
+        double a = fabs(x);
+        env = a > env ? att * env + (1 - att) * a
+                      : rel * env + (1 - rel) * a;
+        if (p->comp > 0.0) {
+            double g = pow(REF / (env > 1e-4 ? env : 1e-4), p->comp);
+            if (g > 4.0) g = 4.0;
+            x *= g;
+        }
+
+        /* envelope detection: transparent below 100% modulation,
+         * rectification fold above                                    */
+        double e = 1.0 + m * x;
+        double y = (fabs(e) - 1.0) / m;
+
+        /* atmospheric crash injected pre-filter (band-limits itself)  */
+        if (pst > 0.0 && frand(&sseed) < pst) {
+            double a2 = exp(2.5 * (frand(&sseed) - 1.0));
+            y += 8.0 * stg * a2 * (frand(&sseed) < 0.5 ? -1.0 : 1.0);
+        }
+
+        y = bq_tick(&hp,  y);
+        y = bq_tick(&lp1, y);
+        y = bq_tick(&lp2, y);
+
+        y += hg * frand2(&hseed);
+
+        if (p->fade_db > 0.0) {
+            y *= pow(10.0, (p->fade_db * 0.5 *
+                            (sin(phf) - 1.0)) / 20.0);
+            phf += dphf;
+        }
+        buf[i] = y;
+    }
+    return 0;
+}
+
+/* ====================================================================== */
 /* Shellac 78                                                             */
 /* ====================================================================== */
 

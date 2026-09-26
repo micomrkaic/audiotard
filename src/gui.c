@@ -84,6 +84,9 @@ struct App {
     GtkWidget *btn_pause, *sel_label;
     GtkWidget *shape_combo, *os_combo, *drive, *bias, *h2db;
     GtkWidget *vinyl_chk, *tape_chk, *shellac_chk, *shellac_era;
+    GtkWidget *am_chk, *am_bw, *am_depth;
+    GtkWidget *tone_bass, *tone_treble;
+    GtkWidget *peq_on[5], *peq_type[5], *peq_f[5], *peq_q[5], *peq_g[5];
     GtkWidget *spk_combo, *spk_zout;
     GtkWidget *wow, *flutter, *hiss, *crk_rate, *crk_db, *hf_loss,
               *bump, *bw;
@@ -200,6 +203,22 @@ static void collect_params(App *a, chain_params *cp)
     cp->wsp.bias  = sv(a->bias);
     cp->h2db      = sv(a->h2db);
     cp->use_vinyl = chk(a->vinyl_chk);
+    cp->use_am    = chk(a->am_chk);
+    cp->am.bw_hz  = sv(a->am_bw);
+    cp->am.depth  = sv(a->am_depth) / 100.0;
+    cp->tone_bass_db   = sv(a->tone_bass);
+    cp->tone_treble_db = sv(a->tone_treble);
+    for (int b = 0; b < 5; b++) {
+        if (!chk(a->peq_on[b])) continue;
+        double g = gtk_spin_button_get_value(GTK_SPIN_BUTTON(a->peq_g[b]));
+        if (fabs(g) < 0.01 || cp->neq >= CHAIN_MAX_EQ) continue;
+        static const bq_type TM[3] = { BQ_PEAK, BQ_LOWSHELF,
+                                       BQ_HIGHSHELF };
+        cp->eq[cp->neq++] = (eq_spec){
+            TM[gtk_combo_box_get_active(GTK_COMBO_BOX(a->peq_type[b]))],
+            gtk_spin_button_get_value(GTK_SPIN_BUTTON(a->peq_f[b])),
+            gtk_spin_button_get_value(GTK_SPIN_BUTTON(a->peq_q[b])), g };
+    }
     cp->use_shellac = chk(a->shellac_chk);
     cp->shp.era = gtk_combo_box_get_active(GTK_COMBO_BOX(a->shellac_era));
     cp->shp.wow_cents     = sv(a->wow);
@@ -2230,6 +2249,55 @@ static void build_ui(App *a)
     a->bw       = add_scale(g2, 8, "Bandwidth (Hz)", 8000.0, 20000.0,
                             250.0, 15000.0,
         "Overall bandwidth of the simulated medium (low-pass).");
+    a->am_chk = gtk_check_button_new_with_label("AM radio");
+    gtk_widget_set_tooltip_text(a->am_chk,
+        "Broadcast AM chain: mono, compression/AGC, envelope detection "
+        "(depth > 100% = overmodulation fold distortion), 4th-order "
+        "channel band, atmospheric static, receiver hiss. Applied "
+        "after the other media (the broadcast is the last hop). "
+        "Broadcast AM is DSB; for a narrow communications flavor just "
+        "lower the bandwidth.");
+    gtk_grid_attach(GTK_GRID(g2), a->am_chk, 0, 9, 2, 1);
+    a->am_bw    = add_scale(g2, 10, "AM bandwidth (Hz)", 2000.0, 6000.0,
+                            100.0, 4500.0,
+        "Received audio bandwidth (channel + IF).");
+    a->am_depth = add_scale(g2, 11, "AM mod depth (%)", 50.0, 130.0,
+                            1.0, 95.0,
+        "Modulation depth. Above 100% the envelope detector folds -- "
+        "the classic overdriven-transmitter distortion.");
+
+    GtkWidget *g7;
+    frame_grid(col1, "Tone", &g7);
+    a->tone_bass   = add_scale(g7, 0, "Bass (dB)",  -12.0, 12.0, 0.5, 0.0,
+        "Low shelf at 120 Hz.");
+    a->tone_treble = add_scale(g7, 1, "Treble (dB)", -12.0, 12.0, 0.5, 0.0,
+        "High shelf at 8 kHz.");
+
+    GtkWidget *g8;
+    frame_grid(col1, "Parametric EQ (5 bands)", &g8);
+    for (int b = 0; b < 5; b++) {
+        a->peq_on[b] = gtk_check_button_new();
+        gtk_grid_attach(GTK_GRID(g8), a->peq_on[b], 0, b, 1, 1);
+        a->peq_type[b] = gtk_combo_box_text_new();
+        for (const char **s = (const char *[]){ "peak", "low shelf",
+                 "high shelf", NULL }; *s; s++)
+            gtk_combo_box_text_append_text(
+                GTK_COMBO_BOX_TEXT(a->peq_type[b]), *s);
+        gtk_combo_box_set_active(GTK_COMBO_BOX(a->peq_type[b]), 0);
+        gtk_grid_attach(GTK_GRID(g8), a->peq_type[b], 1, b, 1, 1);
+        a->peq_f[b] = gtk_spin_button_new_with_range(20, 20000, 10);
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(a->peq_f[b]),
+                                  (double[]){ 80, 250, 1000, 3500,
+                                              10000 }[b]);
+        gtk_grid_attach(GTK_GRID(g8), a->peq_f[b], 2, b, 1, 1);
+        a->peq_q[b] = gtk_spin_button_new_with_range(0.3, 8.0, 0.1);
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(a->peq_q[b]), 1.0);
+        gtk_grid_attach(GTK_GRID(g8), a->peq_q[b], 3, b, 1, 1);
+        a->peq_g[b] = gtk_spin_button_new_with_range(-15, 15, 0.5);
+        gtk_grid_attach(GTK_GRID(g8), a->peq_g[b], 4, b, 1, 1);
+    }
+    gtk_widget_set_tooltip_text(g8,
+        "Each row: enable, type, frequency (Hz), Q, gain (dB).");
 
     GtkWidget *g6s;
     frame_grid(col2, "Speaker load (amp output impedance sim)", &g6s);

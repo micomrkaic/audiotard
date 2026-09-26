@@ -82,9 +82,22 @@ typedef struct {
     double crackle_db;
 } shellac_params;
 
+typedef struct {
+    double bw_hz;         /* received audio bandwidth (channel + IF)   */
+    double hp_hz;         /* low corner of the broadcast chain         */
+    double depth;         /* modulation depth; > 1.0 = overmodulation
+                             (envelope-detector fold distortion)       */
+    double comp;          /* 0..1 broadcast compression / receiver AGC */
+    double static_per_s;  /* atmospheric crash rate                    */
+    double static_db;
+    double hiss_db;       /* post-detector receiver noise              */
+    double fade_db;       /* skywave fade depth (0.15 Hz); 0 = off     */
+} am_params;
+
 extern const vinyl_params   VINYL_DEFAULTS;
 extern const tape_params    TAPE_DEFAULTS;
 extern const shellac_params SHELLAC_DEFAULTS;
+extern const am_params      AM_DEFAULTS;
 
 /* In-place, one channel. 'channel' decorrelates hiss between channels
  * while keeping crackle correlated (groove damage hits both channels;
@@ -94,6 +107,8 @@ extern const shellac_params SHELLAC_DEFAULTS;
  * in so consecutive blocks don't repeat identical noise.               */
 int vinyl_process(double *buf, size_t n, double fs,
                   const vinyl_params *p, unsigned channel, double t0);
+int am_process(double *buf, size_t n, double fs,
+               const am_params *p, double t0);
 int shellac_process(double *buf, size_t n, double fs,
                     const shellac_params *p, double t0);
 int tape_process(double *buf, size_t n, double fs,

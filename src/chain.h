@@ -38,6 +38,9 @@ typedef struct {
     double       h2db;        /* calibrated at render time vs input peak */
     int          use_shellac;  /* 78 rpm: folds to mono, runs first  */
     shellac_params shp;
+    int          use_am;       /* AM radio: mono, after the media     */
+    am_params    am;
+    double       tone_bass_db, tone_treble_db;   /* simple tone dials */
     int          use_vinyl;
     vinyl_params vp;
     int          use_tape;

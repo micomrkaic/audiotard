@@ -38,6 +38,7 @@ void chain_defaults(chain_params *cp)
     cp->vp      = VINYL_DEFAULTS;
     cp->tp      = TAPE_DEFAULTS;
     cp->shp     = SHELLAC_DEFAULTS;
+    cp->am      = AM_DEFAULTS;
     cp->os      = 8;
     cp->gain_db = 0.0;
     cp->spk_zout = 1.0;        /* DF 8 -- typical push-pull tube amp   */
@@ -87,6 +88,16 @@ int chain_parse(chain_params *cp, int argc, char **argv, int *i)
                                    return 1; }
     if (!strcmp(a, "--gain-in")) { TAKE(cp->gain_db);   return 1; }
 
+    if (!strcmp(a, "--amradio")) {
+        cp->use_am = 1;
+        if (v && (v[0] >= '0' && v[0] <= '9')) {   /* optional bw_hz  */
+            cp->am.bw_hz = atof(v);
+            (*i)++;
+        }
+        return 1;
+    }
+    if (!strcmp(a, "--bass"))   { TAKE(cp->tone_bass_db);   return 1; }
+    if (!strcmp(a, "--treble")) { TAKE(cp->tone_treble_db); return 1; }
     if (!strcmp(a, "--shellac")) {
         if (!v) die("missing value: --shellac acoustic|electric");
         if      (!strcmp(v, "acoustic")) cp->shp.era = 0;
@@ -193,7 +204,8 @@ int chain_render(const audio_buf *in, audio_buf *out,
     for (unsigned c = 0; c < in->channels; c++) {
         for (size_t i = 0; i < in->nframes; i++)
             chan[i] = g_in * in->data[i * in->channels + c];
-        if (cp.use_shellac && in->channels > 1)   /* a 78 is mono      */
+        if ((cp.use_shellac || cp.use_am) && in->channels > 1)
+            /* discs and AM broadcast are mono                          */
             for (size_t i = 0; i < in->nframes; i++) {
                 double s = 0.0;
                 for (unsigned cc = 0; cc < in->channels; cc++)
@@ -220,6 +232,21 @@ int chain_render(const audio_buf *in, audio_buf *out,
             vinyl_process(chan, in->nframes, (double)in->rate, &cp.vp, c,
                           t0))
             goto fail;
+        if (cp.use_am &&
+            am_process(chan, in->nframes, (double)in->rate, &cp.am, t0))
+            goto fail;
+        if (fabs(cp.tone_bass_db) > 0.01) {
+            biquad q;
+            bq_design(&q, BQ_LOWSHELF, (double)in->rate, 120.0, 0.7071,
+                      cp.tone_bass_db);
+            bq_process(&q, chan, in->nframes);
+        }
+        if (fabs(cp.tone_treble_db) > 0.01) {
+            biquad q;
+            bq_design(&q, BQ_HIGHSHELF, (double)in->rate, 8000.0, 0.7071,
+                      cp.tone_treble_db);
+            bq_process(&q, chan, in->nframes);
+        }
         for (int b = 0; b < cp.neq; b++) {
             biquad q;
             bq_design(&q, cp.eq[b].t, (double)in->rate,
@@ -534,6 +561,8 @@ void sc_isolate(chain_params *cp, sc_param id)
     cp->neq = 0;
     cp->spk_model = 0;
     cp->use_shellac = 0;
+    cp->use_am = 0;
+    cp->tone_bass_db = cp->tone_treble_db = 0.0;
     switch (id) {
     case SC_H2DB:
     case SC_DRIVE:

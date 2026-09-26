@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.8.1**
+**v0.9.0**
 
 ![audiotard](docs/banner.png)
 
@@ -257,6 +257,27 @@ canvas/Web Audio on top of this module.)
   honest generalization.
 - Headless machines: set `AUDIOTARD_ALSA_DEV=null` to run the GUI with a
   real-time-paced silent sink.
+
+## AM radio, tone dials, parametric EQ (0.9.x)
+
+**AM radio** (`--amradio [bw_hz]`): the broadcast chain -- mono fold,
+transmitter compression / receiver AGC (quiet passages lifted, loud
+ones held, like a real set), envelope detection with overmodulation
+fold distortion above 100% depth, 4th-order channel band (default
+4.5 kHz), atmospheric static crashes, post-detector hiss, optional
+skywave fade. Broadcast AM is DSB; for a narrow communications flavor
+just lower the bandwidth. Applied after the other media: shellac +
+tape + AM is a 78 dubbed to tape and broadcast. Verified: 6 kHz at
+-12 dB re 1 kHz through the default band; depth 95% on a 0.9 FS tone
+leaves H2 at -58 dB (clean until you actually overmodulate); AGC
+lifts a -24 dBFS tone by +6 dB and holds a loud one at -9 dB.
+
+**Tone dials** (`--bass dB`, `--treble dB`): low shelf at 120 Hz,
+high shelf at 8 kHz, +-12 dB.
+
+**Parametric EQ**: the CLI's `--eq type:f:Q:g` (16 bands) is now in
+the GTK and browser UIs as a 5-band section (peak / low shelf / high
+shelf, 20 Hz - 20 kHz, Q 0.3-8, +-15 dB).
 
 ## Shellac 78
 

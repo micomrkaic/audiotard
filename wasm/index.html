@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.8.1 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.9.0 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -100,9 +100,26 @@ selection; click to seek)</span>
   <label>hiss (dBFS)</label><input type="range" id="hiss" min="-100"
     max="-40" step="1" value="-60"><span class="val" id="hissv">-60</span><br>
   <label>crackle (dBFS)</label><input type="range" id="crkdb" min="-60"
-    max="-10" step="1" value="-33"><span class="val" id="crkdbv">-33</span>
+    max="-10" step="1" value="-33"><span class="val" id="crkdbv">-33</span><br>
+  <label>AM bw (Hz)</label><input type="range" id="ambw" min="2000"
+    max="6000" step="100" value="4500"><span class="val"
+    id="ambwv">4500</span><br>
+  <label>AM depth (%)</label><input type="range" id="amdepth" min="50"
+    max="130" step="1" value="95"><span class="val"
+    id="amdepthv">95</span>
 </fieldset>
 </div>
+<fieldset><legend>tone</legend>
+  <label>bass (dB)</label><input type="range" id="bass" min="-12"
+    max="12" step="0.5" value="0"><span class="val" id="bassv">0.0</span>
+  <label style="margin-left:1em">treble (dB)</label>
+  <input type="range" id="treble" min="-12" max="12" step="0.5"
+    value="0"><span class="val" id="treblev">0.0</span>
+</fieldset>
+<fieldset><legend>parametric EQ (5 bands: on, type, freq, Q, gain dB)
+</legend>
+  <div id="eqrows"></div>
+</fieldset>
 <fieldset><legend>speaker load (amp output impedance -- the one tube
 effect that was ever audible)</legend>
   <label>speaker</label>
@@ -139,7 +156,8 @@ let selA = 0, selB = 0, haveSel = false;
 /* ------------------------------ params ------------------------------ */
 const SLIDERS = [["drive","drivev",1],["bias","biasv",2],["h2db","h2dbv",0],
   ["wow","wowv",1],["flutter","flutterv",1],["hiss","hissv",0],
-  ["crkdb","crkdbv",0],["spkzout","spkzoutv",2]];
+  ["crkdb","crkdbv",0],["spkzout","spkzoutv",2],["ambw","ambwv",0],
+  ["amdepth","amdepthv",0],["bass","bassv",1],["treble","treblev",1]];
 for (const [id, vid, fix] of SLIDERS)
   $(id).addEventListener("input",
       () => $(vid).textContent = (+$(id).value).toFixed(fix));
@@ -153,11 +171,47 @@ function collect(bypass) {
     crkRate:12, crkDb:+$("crkdb").value, hfLoss:0.35, bumpDb:3, bwHz:15000,
     spkModel:+$("spkmodel").value, spkZout:+$("spkzout").value,
     shellac: $("shellac").checked ? +$("shellacera").value : 0,
+    am: $("am").checked ? 1 : 0, amBw:+$("ambw").value,
+    amDepth:+$("amdepth").value / 100,
+    bassDb:+$("bass").value, trebleDb:+$("treble").value,
+    eq: eqCollect(),
     bypass: !!bypass };
   p.enabled = p.shape > 0 || p.vinyl || p.tape || p.spkModel > 0
-      || p.shellac > 0;
+      || p.shellac > 0 || p.am > 0 || p.eq.length > 0
+      || Math.abs(p.bassDb) > 0.01 || Math.abs(p.trebleDb) > 0.01;
   return p;
 }
+/* 5-band parametric EQ rows */
+const EQ_DEF = [80, 250, 1000, 3500, 10000];
+$("eqrows").innerHTML = EQ_DEF.map((f, i) => `
+  <div><input type="checkbox" id="eqon${i}">
+  <select id="eqt${i}"><option value="0">peak</option>
+    <option value="1">low shelf</option>
+    <option value="2">high shelf</option></select>
+  <input type="number" id="eqf${i}" min="20" max="20000" value="${f}"
+    style="width:5.5em;background:#232329;color:#c9c9d1;
+           border:1px solid #3a3a44">
+  <input type="number" id="eqq${i}" min="0.3" max="8" step="0.1"
+    value="1" style="width:4em;background:#232329;color:#c9c9d1;
+           border:1px solid #3a3a44">
+  <input type="number" id="eqg${i}" min="-15" max="15" step="0.5"
+    value="0" style="width:4.5em;background:#232329;color:#c9c9d1;
+           border:1px solid #3a3a44"></div>`).join("");
+function eqCollect() {
+  const rows = [];
+  for (let i = 0; i < 5; i++) {
+    if (!$("eqon" + i).checked) continue;
+    const g = +$("eqg" + i).value;
+    if (Math.abs(g) < 0.01) continue;
+    rows.push([+$("eqt" + i).value, +$("eqf" + i).value,
+               +$("eqq" + i).value, g]);
+  }
+  return rows;
+}
+for (let i = 0; i < 5; i++)
+  for (const p of ["eqon","eqt","eqf","eqq","eqg"])
+    $(p + i).addEventListener("input", pushParams);
+
 /* a disc is one format: vinyl and shellac are mutually exclusive
  * (tape combines with either -- that is a dub chain)                  */
 $("shellac").addEventListener("input", () => {
@@ -255,10 +309,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.8.1";
+const APP_V = "0.9.0";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:801 });
+    url:"audiotard.wasm?v=" + APP_V, expect:900 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -715,7 +769,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:801 });
+      url: "audiotard.wasm?v=" + APP_V, expect:900 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

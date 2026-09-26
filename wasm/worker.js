@@ -54,12 +54,21 @@ function renderSpan(from, to) {           /* -> Float64 interleaved     */
   }
   let out = 0;
   if (!params.bypass && params.enabled) {
+    const eq = params.eq || [];
+    if (eq.length) {
+      const ep = wasm.at_alloc(eq.length * 4);
+      heap().set([].concat(...eq), ep / 8);
+      wasm.at_eq(eq.length, ep);
+      wasm.at_free(ep);
+    } else wasm.at_eq(0, 0);
     out = wasm.at_render(ptr, n, ch, rate,
         params.shape, params.drive, params.bias, params.h2db, params.os,
         params.vinyl, params.tape, params.wow, params.flutter,
         params.hiss, params.crkRate, params.crkDb, params.hfLoss,
         params.bumpDb, params.bwHz, params.spkModel | 0,
-        params.spkZout || 0, params.shellac | 0, 0, from);
+        params.spkZout || 0, params.shellac | 0, params.am | 0,
+        params.amBw || 4500, params.amDepth || 0.95,
+        params.bassDb || 0, params.trebleDb || 0, 0, from);
     if (!out) postMessage({ type: "error",
         msg: "DSP render FAILED (out of memory?) -- playing clean" });
   }

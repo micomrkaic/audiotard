@@ -36,7 +36,7 @@ double audio_peak(const audio_buf *b)
 }
 
 __attribute__((export_name("at_version")))
-int at_version(void) { return 801; }   /* maj*10000 + min*100 + patch  */
+int at_version(void) { return 900; }   /* maj*10000 + min*100 + patch  */
 
 __attribute__((export_name("at_alloc")))
 double *at_alloc(int n) { return malloc((size_t)n * sizeof(double)); }
@@ -45,6 +45,24 @@ __attribute__((export_name("at_free")))
 void at_free(double *p) { free(p); }
 
 static audio_buf g_out;
+
+static eq_spec g_eq[CHAIN_MAX_EQ];
+static int     g_neq;
+
+/* spec: n rows of [type(0 peak/1 lowshelf/2 highshelf), f, Q, g_db]   */
+__attribute__((export_name("at_eq")))
+void at_eq(int n, double *spec)
+{
+    static const bq_type TM[3] = { BQ_PEAK, BQ_LOWSHELF, BQ_HIGHSHELF };
+    if (n > CHAIN_MAX_EQ) n = CHAIN_MAX_EQ;
+    g_neq = n > 0 ? n : 0;
+    for (int b = 0; b < g_neq; b++) {
+        int t = (int)spec[b * 4];
+        g_eq[b] = (eq_spec){ TM[t >= 0 && t <= 2 ? t : 0],
+                             spec[b * 4 + 1], spec[b * 4 + 2],
+                             spec[b * 4 + 3] };
+    }
+}
 
 /* Render 'frames' interleaved frames through the chain. Returns a
  * pointer to frames*ch doubles (valid until the next call), or 0.     */
@@ -55,7 +73,9 @@ double *at_render(double *in, int frames, int ch, int rate,
                   double flutter, double hiss, double crk_rate,
                   double crk_db, double hf_loss, double bump_db,
                   double bw_hz, int spk_model, double spk_zout,
-                  int shellac, int match_rms, int pos0)
+                  int shellac, int am, double am_bw, double am_depth,
+                  double bass_db, double treble_db,
+                  int match_rms, int pos0)
 {
     audio_buf ib = { .data = in, .nframes = (size_t)frames,
                      .channels = (unsigned)ch, .rate = (unsigned)rate };
@@ -81,6 +101,13 @@ double *at_render(double *in, int frames, int ch, int rate,
     cp.vp.lp_hz = cp.tp.lp_hz = bw_hz;
     cp.spk_model = spk_model;
     cp.spk_zout  = spk_zout;
+    cp.use_am   = am > 0;
+    cp.am.bw_hz = am_bw > 100 ? am_bw : 4500.0;
+    cp.am.depth = am_depth > 0.05 ? am_depth : 0.95;
+    cp.tone_bass_db   = bass_db;
+    cp.tone_treble_db = treble_db;
+    for (int b = 0; b < g_neq && cp.neq < CHAIN_MAX_EQ; b++)
+        cp.eq[cp.neq++] = g_eq[b];
     cp.use_shellac = shellac > 0;
     cp.shp.era     = shellac == 2 ? 1 : 0;
     cp.shp.wow_cents     = wow;
