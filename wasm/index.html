@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.9.0 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.9.1 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -87,6 +87,7 @@ selection; click to seek)</span>
 <fieldset><legend>media</legend>
   <label><input type="checkbox" id="vinyl"> vinyl</label>
   <label><input type="checkbox" id="tape"> tape</label>
+  <label><input type="checkbox" id="am"> AM radio</label>
   <label><input type="checkbox" id="shellac"> shellac 78</label>
   <select id="shellacera">
     <option value="1" selected>acoustic horn</option>
@@ -309,10 +310,10 @@ $("file").onchange = async e => {
 };
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.9.0";
+const APP_V = "0.9.1";
 worker = new Worker("worker.js?v=" + APP_V);
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:900 });
+    url:"audiotard.wasm?v=" + APP_V, expect:901 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -769,7 +770,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:900 });
+      url: "audiotard.wasm?v=" + APP_V, expect:901 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

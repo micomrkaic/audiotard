@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.9.0**
+**v0.9.1**
 
 ![audiotard](docs/banner.png)
 
@@ -321,6 +321,17 @@ typically under 0.35 dB, against exact tone renders across all four
 models). Applied last in the chain -- it is the amp-speaker interface.
 
 ## Squashed bugs (full transparency)
+
+- **0.9.1** -- the browser page shipped in 0.9.0 was missing the AM
+  radio *checkbox* (the sliders were there): a multi-part patch
+  aborted all-or-nothing, and the recovery re-applied every part
+  except one. Loading a file worked; pressing play died silently on
+  the missing element before anything reached the DSP worker. Caught
+  by a new end-to-end gate (`tools_page_e2e.js`, needs `npm i
+  jsdom`) that loads the real page in a real DOM, chooses a file,
+  clicks play, and asserts the worker message sequence -- because the
+  previous static gate only *evaluated* the page script and never
+  *executed* its event handlers.
 
 audiotard's authority rests on one claim: *the only audible difference
 between clean and processed is the distortion you dialed in.* Any defect
