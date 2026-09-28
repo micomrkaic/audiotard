@@ -36,7 +36,7 @@ double audio_peak(const audio_buf *b)
 }
 
 __attribute__((export_name("at_version")))
-int at_version(void) { return 1002; }   /* maj*10000 + min*100 + patch  */
+int at_version(void) { return 1003; }   /* maj*10000 + min*100 + patch  */
 
 __attribute__((export_name("at_alloc")))
 double *at_alloc(int n) { return malloc((size_t)n * sizeof(double)); }
@@ -102,7 +102,7 @@ double *at_render(double *in, int frames, int ch, int rate,
     cp.spk_model = spk_model;
     cp.spk_zout  = spk_zout;
     cp.use_am   = am > 0;
-    cp.am.bw_hz = am_bw > 100 ? am_bw : 4500.0;
+    cp.am.bw_hz = am_bw > 100 ? am_bw : 3500.0;
     cp.am.depth = am_depth > 0.05 ? am_depth : 0.95;
     cp.tone_bass_db   = bass_db;
     cp.tone_treble_db = treble_db;

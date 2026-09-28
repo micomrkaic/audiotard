@@ -34,6 +34,7 @@
  *   --hiss-db D --crackle-rate N --crackle-db D
  *   --bump-db D --bump-hz F --hf-loss S --bw-hz F
  *   --eq TYPE:FREQ:Q:GAIN_DB    (peak|ls|hs|lp|hp|bp, repeatable)
+ *   --amradio [BW_HZ]  --amnight
  *   --gain-in DB
  *
  * Output options (file mode):

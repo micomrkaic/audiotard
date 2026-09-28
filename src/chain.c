@@ -88,6 +88,14 @@ int chain_parse(chain_params *cp, int argc, char **argv, int *i)
                                    return 1; }
     if (!strcmp(a, "--gain-in")) { TAKE(cp->gain_db);   return 1; }
 
+    if (!strcmp(a, "--amnight")) {             /* skywave preset       */
+        double bw = cp->am.bw_hz, d = cp->am.depth;
+        cp->use_am = 1;
+        cp->am = AM_NIGHT;
+        cp->am.bw_hz = bw;
+        cp->am.depth = d;
+        return 1;
+    }
     if (!strcmp(a, "--amradio")) {
         cp->use_am = 1;
         if (v && (v[0] >= '0' && v[0] <= '9')) {   /* optional bw_hz  */

@@ -67,7 +67,7 @@ function renderSpan(from, to) {           /* -> Float64 interleaved     */
         params.hiss, params.crkRate, params.crkDb, params.hfLoss,
         params.bumpDb, params.bwHz, params.spkModel | 0,
         params.spkZout || 0, params.shellac | 0, params.am | 0,
-        params.amBw || 4500, params.amDepth || 0.95,
+        params.amBw || 3500, params.amDepth || 0.95,
         params.bassDb || 0, params.trebleDb || 0, 0, from);
     if (!out) postMessage({ type: "error",
         msg: "DSP render FAILED (out of memory?) -- playing clean" });

@@ -2251,20 +2251,21 @@ static void build_ui(App *a)
         "Overall bandwidth of the simulated medium (low-pass).");
     a->am_chk = gtk_check_button_new_with_label("AM radio");
     gtk_widget_set_tooltip_text(a->am_chk,
-        "Broadcast AM chain: mono, compression/AGC, envelope detection "
-        "(depth > 100% = overmodulation fold distortion), 4th-order "
-        "channel band, atmospheric static, receiver hiss. Applied "
-        "after the other media (the broadcast is the last hop). "
-        "Broadcast AM is DSB; for a narrow communications flavor just "
-        "lower the bandwidth.");
+        "Broadcast AM chain: mono, 75 us pre-emphasis, transmitter AGC "
+        "and asymmetric clipper (+125/-98%), 8th-order IF before an RC "
+        "envelope detector, IF-band noise and static, receiver AVC. "
+        "Applied after the other media (the broadcast is the last "
+        "hop). Night skywave (fades, whistle): CLI --amnight.");
     gtk_grid_attach(GTK_GRID(g2), a->am_chk, 0, 9, 2, 1);
     a->am_bw    = add_scale(g2, 10, "AM bandwidth (Hz)", 2000.0, 6000.0,
-                            100.0, 4500.0,
-        "Received audio bandwidth (channel + IF).");
+                            100.0, 3500.0,
+        "Receiver IF bandwidth (8th-order Butterworth): the audio "
+        "cutoff. 2.5 kHz cheap portable, 4.5 kHz good tuner.");
     a->am_depth = add_scale(g2, 11, "AM mod depth (%)", 50.0, 130.0,
                             1.0, 95.0,
-        "Modulation depth. Above 100% the envelope detector folds -- "
-        "the classic overdriven-transmitter distortion.");
+        "Modulation depth after the transmitter clipper. Above 100% "
+        "the transmitter hits carrier cutoff -- the classic "
+        "overdriven-transmitter distortion.");
 
     GtkWidget *g7;
     frame_grid(col1, "Tone", &g7);

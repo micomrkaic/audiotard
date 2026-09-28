@@ -34,7 +34,7 @@
 <h1>audiotard</h1>
 <span style="color:#8a8a94;font-style:italic"> &mdash; because worse
 sound is better!</span>
-<p class="sub">v0.10.2 &middot; calibrated distortion &middot; blind
+<p class="sub">v0.10.3 &middot; calibrated distortion &middot; blind
 listening tests &mdash; live in your browser, nothing uploaded</p>
 
 <input type="file" id="file" accept="audio/*">
@@ -121,8 +121,8 @@ selection; click to seek)</span>
   <label>crackle (dBFS)</label><input type="range" id="crkdb" min="-60"
     max="-10" step="1" value="-33"><span class="val" id="crkdbv">-33</span><br>
   <label>AM bw (Hz)</label><input type="range" id="ambw" min="2000"
-    max="6000" step="100" value="4500"><span class="val"
-    id="ambwv">4500</span><br>
+    max="6000" step="100" value="3500"><span class="val"
+    id="ambwv">3500</span><br>
   <label>AM depth (%)</label><input type="range" id="amdepth" min="50"
     max="130" step="1" value="95"><span class="val"
     id="amdepthv">95</span>
@@ -451,7 +451,7 @@ $("rcapture").onclick = () => {
 
 
 /* --------------------------- worker/stream -------------------------- */
-const APP_V = "0.10.2";
+const APP_V = "0.10.3";
 worker = new Worker("worker.js?v=" + APP_V);
 let radM = null, radC = null, radFill = 0;    /* radio spectrum rings */
 worker.addEventListener("message", ev => {
@@ -474,7 +474,7 @@ worker.addEventListener("message", ev => {
   radFill = Math.min(FN, radFill + n);
 });
 worker.postMessage({ type:"init",
-    url:"audiotard.wasm?v=" + APP_V, expect:1002 });
+    url:"audiotard.wasm?v=" + APP_V, expect:1003 });
 let playing = false, playT = 0, pending = false;
 let sources = [], blockMap = [];   /* {ctx0, filePos, frames, mono}     */
 
@@ -940,7 +940,7 @@ $("abxstart").onclick = async () => {
   if (!p.enabled) { $("abxstat").textContent = "no effect enabled"; return; }
   const tmp = new Worker("worker.js?v=" + APP_V);
   tmp.postMessage({ type: "init",
-      url: "audiotard.wasm?v=" + APP_V, expect:1002 });
+      url: "audiotard.wasm?v=" + APP_V, expect:1003 });
   await new Promise(res => tmp.onmessage = e =>
       e.data.type === "ready" && res());
   tmp.postMessage({ type: "audio", buf: clean.slice().buffer,

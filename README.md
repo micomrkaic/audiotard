@@ -1,6 +1,6 @@
 # audiotard &mdash; *because worse sound is better!*
 
-**v0.10.2**
+**v0.10.3**
 
 ![audiotard](docs/banner.png)
 
@@ -281,19 +281,35 @@ first block like file streaming (no pumping). Native GTK stays
 file-based for now: TLS + stream codecs would be the first real
 dependencies of the project.
 
-## AM radio, tone dials, parametric EQ (0.9.x)
+## AM radio (0.10.3), tone dials, parametric EQ (0.9.x)
 
-**AM radio** (`--amradio [bw_hz]`): the broadcast chain -- mono fold,
-transmitter compression / receiver AGC (quiet passages lifted, loud
-ones held, like a real set), envelope detection with overmodulation
-fold distortion above 100% depth, 4th-order channel band (default
-4.5 kHz), atmospheric static crashes, post-detector hiss, optional
-skywave fade. Broadcast AM is DSB; for a narrow communications flavor
-just lower the bandwidth. Applied after the other media: shellac +
-tape + AM is a 78 dubbed to tape and broadcast. Verified: 6 kHz at
--12 dB re 1 kHz through the default band; depth 95% on a 0.9 FS tone
-leaves H2 at -58 dB (clean until you actually overmodulate); AGC
-lifts a -24 dBFS tone by +6 dB and holds a loud one at -9 dB.
+**AM radio** (`--amradio [bw_hz]`, `--amnight`): broadcast AM from
+transmitter to loudspeaker, as a complex-baseband model (0.10.3
+rewrite). Transmitter: mono fold, 50 Hz high-pass, NRSC-1 modified
+75 us pre-emphasis (zero 2122 Hz, pole 8.7 kHz), RMS AGC (8:1 toward
+-20 dBFS, lift capped at +12 dB), asymmetric soft clipper at +125% /
+-98%; depth above 100% drives past the clipper into carrier cutoff.
+Channel: Gaussian noise at a set carrier-to-noise ratio (45 dB),
+atmospheric crashes, optional skywave fading and adjacent-channel
+carrier. Receiver: 8th-order Butterworth IF (default 3.5 kHz)
+*before* detection, so noise and static are band-limited like the
+programme; ideal-diode + RC envelope detector (60 us: diagonal
+clipping), Rac/Rdc = 0.8 (negative-peak clipping), 0.1 s AVC,
+150 Hz coupling/speaker high-pass, no de-emphasis (as in most sets).
+`--amnight` is the skywave preset: random fades to -20 dB (flat, so
+the AVC holds level while the noise floor swells) plus carrier-only
+selective fades to -6.7 dB (sidebands exceed the carrier: detector
+fold distortion), 35 dB CNR, more crashes, and a 10 kHz heterodyne
+whistle at -40 dB. Fading and whistle phase are functions of absolute
+time, so overlapping streaming renders agree at the seams. Applied
+after the other media: shellac + tape + AM is a 78 dubbed to tape and
+broadcast. Verified (white-noise transfer re 1 kHz): 100 Hz -8.6 dB,
+3 kHz +3.0 dB (pre-emphasis), 4 kHz -5.2, 5 kHz -20.2, 8 kHz -55.5,
+10 kHz -75.3 dB. 1 kHz tones from -30 to -1 dBFS RMS come out within
+3.3 dB of each other; THD 1.1-2.4 %. Streaming slices with the live
+pre-roll match a whole-file render to -75 dB re programme RMS by day,
+-45 dB at night (AVC settling during fades). About 0.6 % of one core
+at 44.1 kHz.
 
 **Tone dials** (`--bass dB`, `--treble dB`): low shelf at 120 Hz,
 high shelf at 8 kHz, +-12 dB.
