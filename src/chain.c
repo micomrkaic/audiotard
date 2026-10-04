@@ -192,6 +192,22 @@ int chain_render(const audio_buf *in, audio_buf *out,
 {
     chain_params cp = *cp_in;             /* local: h2 calibration       */
 
+    /* clamp every filter/oscillator design frequency below Nyquist:
+     * at fs <= 24 kHz the media presets' corners (vinyl/tape lp, am
+     * bw, 10 kHz whistle) exceed fs/2 and a biquad designed there
+     * emits NaN. 0.45*fs leaves the top transition band intact.
+     * (ported from tagplay's streaming wrapper, 0.8.13) */
+    {
+        double nyq = 0.45 * (double)in->rate;
+        if (cp.tp.lp_hz      > nyq) cp.tp.lp_hz      = nyq;
+        if (cp.tp.bump_hz    > nyq) cp.tp.bump_hz    = nyq;
+        if (cp.vp.lp_hz      > nyq) cp.vp.lp_hz      = nyq;
+        if (cp.vp.hp_hz      > nyq) cp.vp.hp_hz      = nyq;
+        if (cp.am.bw_hz      > nyq) cp.am.bw_hz      = nyq;
+        if (cp.am.hp_hz      > nyq) cp.am.hp_hz      = nyq;
+        if (cp.am.whistle_hz > nyq) cp.am.whistle_hz = nyq;
+    }
+
     if (cp.use_shape && cp.wsp.shape == WS_H2) {
         double pk = audio_peak(in);
         if (pk <= 0.0) return -1;
